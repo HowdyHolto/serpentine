@@ -742,29 +742,102 @@ function generateSerpentineOnce(
 }
 
 /**
- * Produces an ordered list of (strokeWidth, minGap) perturbation pairs, sorted
- * by total magnitude so we try the gentlest adjustments first.
+ * Produces an ordered list of (strokeWidth, minGap, seed) perturbations,
+ * sorted by total magnitude so we try the gentlest adjustments first.
+ *
+ * Seed offsets are weighted as zero magnitude — they're visually invisible
+ * to the user, so we'd rather burn through seed variations before touching
+ * stroke/gap. Different seeds change which cells get "trapped" by the
+ * greedy walker, so this is often the cheapest way to find a 100% fill.
  */
 function fillCompletionCandidates(
   baseStroke: number,
-  baseGap: number
-): Array<{ stroke: number; gap: number; magnitude: number }> {
-  const strokeDeltas = [0, -0.5, 0.5, -1, 1, -1.5, 1.5, -2, 2];
-  const gapDeltas = [0, -1, 1, -2, 2, -3, 3];
-  const candidates: Array<{ stroke: number; gap: number; magnitude: number }> = [];
+  baseGap: number,
+  baseSeed: number
+): Array<{ stroke: number; gap: number; seed: number; magnitude: number }> {
+  const strokeDeltas = [0, -0.5, 0.5, -1, 1, -1.5, 1.5, -2, 2, -3, 3];
+  const gapDeltas = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5];
+  const seedOffsets = [1, 2, 3, 4, 5, 6, 7, 8]; // never 0 — that's the base attempt
+
+  const out: Array<{ stroke: number; gap: number; seed: number; magnitude: number }> = [];
+
+  // Phase 1: pure seed variation at the user's exact stroke/gap. Free, invisible.
+  for (const so of seedOffsets) {
+    out.push({ stroke: baseStroke, gap: baseGap, seed: baseSeed + so, magnitude: 0.01 * so });
+  }
+
+  // Phase 2: stroke/gap perturbations (each tried with a couple of seed
+  // variations to catch unlucky greedy traps).
   for (const sd of strokeDeltas) {
     for (const gd of gapDeltas) {
-      if (sd === 0 && gd === 0) continue; // base case is tried separately
+      if (sd === 0 && gd === 0) continue;
       const stroke = baseStroke + sd;
       const gap = baseGap + gd;
       if (stroke < 1) continue;
       if (gap < 0) continue;
-      // Weight stroke changes a bit more than gap changes so visual impact is minimized.
-      candidates.push({ stroke, gap, magnitude: Math.abs(sd) * 1.25 + Math.abs(gd) });
+      // Weight stroke changes a bit more than gap (more visible).
+      const mag = 1 + Math.abs(sd) * 1.25 + Math.abs(gd);
+      for (const so of [0, 1, 2]) {
+        out.push({ stroke, gap, seed: baseSeed + so, magnitude: mag + so * 0.01 });
+      }
     }
   }
-  candidates.sort((a, b) => a.magnitude - b.magnitude);
-  return candidates;
+
+  out.sort((a, b) => a.magnitude - b.magnitude);
+  return out;
+}
+
+/**
+ * Hamiltonian boustrophedon ("snake") path over every available cell in the
+ * grid. Guarantees 100% fill on rectangular boundaries; for non-rectangular
+ * boundaries cells may be skipped where the grid has unavailable cells in the
+ * middle of a row, but it'll still beat the greedy walker's coverage.
+ *
+ * The returned path is a continuous sequence of cell-adjacent moves wherever
+ * possible. For non-rectangular boundaries with mid-row obstacles, this can
+ * produce non-adjacent jumps; we accept that as a fallback last-resort.
+ */
+function boustrophedonGridPath(grid: OccupancyGrid): GridPoint[] {
+  const path: GridPoint[] = [];
+  for (let r = 0; r < grid.rows; r++) {
+    if (r % 2 === 0) {
+      for (let c = 0; c < grid.cols; c++) {
+        if (grid.isAvailable(c, r)) {
+          path.push({ col: c, row: r });
+          grid.occupy(c, r);
+        }
+      }
+    } else {
+      for (let c = grid.cols - 1; c >= 0; c--) {
+        if (grid.isAvailable(c, r)) {
+          path.push({ col: c, row: r });
+          grid.occupy(c, r);
+        }
+      }
+    }
+  }
+  return path;
+}
+
+function generateBoustrophedonResult(
+  boundary: BoundaryShape,
+  params: GenerationParams
+): { waypoints: Waypoint[]; structure: PathStructure; fillRatio: number } {
+  const cellSize = params.strokeWidth + params.minGap;
+  const grid = new OccupancyGrid(boundary, cellSize);
+  const initial = grid.countAvailable();
+  if (grid.cols < 2 || grid.rows < 2 || initial === 0) {
+    return {
+      waypoints: [],
+      structure: { endCapPairs: [], segments: [], cellSize },
+      fillRatio: 0,
+    };
+  }
+  const gridPath = boustrophedonGridPath(grid);
+  const waypoints = extractWaypointsFromGrid(gridPath, grid);
+  const structure = buildPathStructure(waypoints, cellSize);
+  const fillRatio = initial > 0 ? (initial - grid.countAvailable()) / initial : 0;
+  return { waypoints, structure, fillRatio };
 }
 
 export function generateSerpentine(
@@ -791,9 +864,8 @@ export function generateSerpentine(
     };
   }
 
-  // Retry loop: perturb strokeWidth and minGap to find a fully-filling combo.
-  // Capped so a stubborn boundary doesn't freeze the UI.
-  const MAX_ATTEMPTS = 24;
+  // Phase 1+2: perturb seed, then strokeWidth/minGap, looking for a complete fill.
+  const MAX_ATTEMPTS = 60;
   let best = {
     waypoints: baseAttempt.waypoints,
     structure: baseAttempt.structure,
@@ -801,7 +873,7 @@ export function generateSerpentine(
     params,
   };
 
-  const candidates = fillCompletionCandidates(params.strokeWidth, params.minGap);
+  const candidates = fillCompletionCandidates(params.strokeWidth, params.minGap, params.seed);
   let tried = 0;
   for (const cand of candidates) {
     if (tried >= MAX_ATTEMPTS) break;
@@ -810,6 +882,7 @@ export function generateSerpentine(
       ...params,
       strokeWidth: cand.stroke,
       minGap: cand.gap,
+      seed: cand.seed,
     };
     const attempt = generateSerpentineOnce(boundary, tryParams, guides);
     if (attempt.fillRatio > best.fillRatio) {
@@ -823,11 +896,30 @@ export function generateSerpentine(
     if (best.fillRatio >= FULL_FILL_THRESHOLD) break;
   }
 
+  // Phase 3: last-resort Hamiltonian snake fill. For a rectangular boundary
+  // this mathematically guarantees 100% coverage. For ellipse/path boundaries
+  // it's still likely to outperform the greedy walker's coverage.
+  if (best.fillRatio < FULL_FILL_THRESHOLD) {
+    const snake = generateBoustrophedonResult(boundary, params);
+    if (snake.fillRatio > best.fillRatio) {
+      best = {
+        waypoints: snake.waypoints,
+        structure: snake.structure,
+        fillRatio: snake.fillRatio,
+        // Snake fill uses the user's exact stroke/gap, so report base params.
+        params,
+      };
+    }
+  }
+
   return {
     waypoints: best.waypoints,
     structure: best.structure,
     params: best.params,
     fillRatio: best.fillRatio,
-    adjusted: best.params !== params,
+    adjusted:
+      best.params.strokeWidth !== params.strokeWidth ||
+      best.params.minGap !== params.minGap ||
+      best.params.seed !== params.seed,
   };
 }

@@ -16,7 +16,8 @@
       "Bash(git branch *)",
       "Bash(git fetch *)",
       "mcp__a431cc49-34e2-4383-ad08-d47c9bd7a375__netlify-project-services-reader",
-      "Bash(git -c user.email=holto@local -c user.name=holto commit -m 'Add fill-completion retry for continuous/wicked modes at 100% target *)"
+      "Bash(git -c user.email=holto@local -c user.name=holto commit -m 'Add fill-completion retry for continuous/wicked modes at 100% target *)",
+      "Bash(git -c user.email=holto@local -c user.name=holto commit -m 'Stronger fill-completion: seed sweep + snake-fill fallback *)"
     ]
   }
 }

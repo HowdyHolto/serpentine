@@ -21,3 +21,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Local-only notes / scratch files (not for the public repo)
+*.pdf
+notes/

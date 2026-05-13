@@ -70,17 +70,31 @@ export default function App() {
     if (result.adjusted) {
       const dStroke = result.params.strokeWidth - params.strokeWidth;
       const dGap = result.params.minGap - params.minGap;
-      const parts: string[] = [];
+      const dSeed = result.params.seed - params.seed;
+      const pct = Math.round(result.fillRatio * 100);
+      const visibleParts: string[] = [];
       if (dStroke !== 0) {
-        parts.push(`width ${params.strokeWidth}→${result.params.strokeWidth}`);
+        visibleParts.push(`width ${params.strokeWidth}→${result.params.strokeWidth}`);
       }
       if (dGap !== 0) {
-        parts.push(`spacing ${params.minGap}→${result.params.minGap}`);
+        visibleParts.push(`spacing ${params.minGap}→${result.params.minGap}`);
       }
+      if (visibleParts.length === 0 && dSeed !== 0) {
+        // Seed-only retry — visually invisible, but worth telling the user.
+        setToastMessage(`Reseeded to reach ${pct}% fill`);
+      } else if (visibleParts.length > 0) {
+        setToastMessage(
+          `Adjusted ${visibleParts.join(', ')} to reach ${pct}% fill`
+        );
+      }
+    } else if (
+      params.targetFillPercent >= 100 &&
+      (params.fillMode === 'continuous' || params.fillMode === 'wicked-wise') &&
+      result.fillRatio < 0.999
+    ) {
+      // Target was 100% but we couldn't fully fill — surface the best we got.
       const pct = Math.round(result.fillRatio * 100);
-      setToastMessage(
-        `Adjusted ${parts.join(', ')} to reach ${pct}% fill`
-      );
+      setToastMessage(`Couldn't fully fill — best coverage ${pct}%`);
     }
   }, [boundary, params]);
 
