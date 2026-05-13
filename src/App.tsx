@@ -64,7 +64,24 @@ export default function App() {
     const result = generateSerpentine(boundary, params, guidesRef.current);
     setWaypoints(result.waypoints);
     setStructure(result.structure);
-    setPaths(renderPaths(result.waypoints, params));
+    // Use the params actually applied by the engine (may differ from input
+    // when fill-completion retry tweaked strokeWidth/minGap to fully fill).
+    setPaths(renderPaths(result.waypoints, result.params));
+    if (result.adjusted) {
+      const dStroke = result.params.strokeWidth - params.strokeWidth;
+      const dGap = result.params.minGap - params.minGap;
+      const parts: string[] = [];
+      if (dStroke !== 0) {
+        parts.push(`width ${params.strokeWidth}→${result.params.strokeWidth}`);
+      }
+      if (dGap !== 0) {
+        parts.push(`spacing ${params.minGap}→${result.params.minGap}`);
+      }
+      const pct = Math.round(result.fillRatio * 100);
+      setToastMessage(
+        `Adjusted ${parts.join(', ')} to reach ${pct}% fill`
+      );
+    }
   }, [boundary, params]);
 
   const handleGenerate = useCallback(() => {

@@ -6,7 +6,17 @@
       "Bash(gh auth *)",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git -c user.email=\"holto@local\" -c user.name=\"holto\" commit -m \"Initial commit: Serpentine project from Bolt.new\")"
+      "Bash(git -c user.email=\"holto@local\" -c user.name=\"holto\" commit -m \"Initial commit: Serpentine project from Bolt.new\")",
+      "Read(//usr/local/bin/**)",
+      "Bash(gh --version)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git config *)",
+      "Bash(ssh -T -o StrictHostKeyChecking=no -o BatchMode=yes git@github.com)",
+      "Bash(git branch *)",
+      "Bash(git fetch *)",
+      "mcp__a431cc49-34e2-4383-ad08-d47c9bd7a375__netlify-project-services-reader",
+      "Bash(git -c user.email=holto@local -c user.name=holto commit -m 'Add fill-completion retry for continuous/wicked modes at 100% target *)"
     ]
   }
 }

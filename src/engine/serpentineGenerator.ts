@@ -643,11 +643,26 @@ export function buildPathStructure(
   return { endCapPairs, segments, cellSize };
 }
 
-export function generateSerpentine(
+export interface GenerationResult {
+  waypoints: Waypoint[];
+  structure: PathStructure;
+  /**
+   * The parameters actually used to produce this result. May differ from the
+   * input params when the fill-completion retry adjusted strokeWidth/minGap
+   * to fully cover the boundary at 100% target fill.
+   */
+  params: GenerationParams;
+  /** Fraction of initially-available cells that ended up occupied (0..1). */
+  fillRatio: number;
+  /** True when fill-completion retry applied a perturbation. */
+  adjusted: boolean;
+}
+
+function generateSerpentineOnce(
   boundary: BoundaryShape,
   params: GenerationParams,
   guides?: DirectionGuide[]
-): { waypoints: Waypoint[]; structure: PathStructure } {
+): { waypoints: Waypoint[]; structure: PathStructure; fillRatio: number } {
   const rng = createSeededRandom(params.seed);
   const cellSize = params.strokeWidth + params.minGap;
   const grid = new OccupancyGrid(boundary, cellSize);
@@ -655,6 +670,7 @@ export function generateSerpentine(
   const emptyResult = {
     waypoints: [] as Waypoint[],
     structure: { endCapPairs: [], segments: [], cellSize } as PathStructure,
+    fillRatio: 0,
   };
 
   if (grid.cols < 2 || grid.rows < 2) return emptyResult;
@@ -679,13 +695,16 @@ export function generateSerpentine(
 
   if (startCol === -1) return emptyResult;
 
+  const fillRatioOf = () =>
+    initialAvailable > 0 ? (initialAvailable - grid.countAvailable()) / initialAvailable : 0;
+
   if (params.fillMode === 'continuous') {
     const gridPath: GridPoint[] = [];
     walkContinuous(grid, startCol, startRow, rng, params, cellSize, gridPath, biasMap);
 
     const waypoints = extractWaypointsFromGrid(gridPath, grid);
     const structure = buildPathStructure(waypoints, cellSize);
-    return { waypoints, structure };
+    return { waypoints, structure, fillRatio: fillRatioOf() };
   }
 
   if (params.fillMode === 'wicked-wise') {
@@ -694,7 +713,7 @@ export function generateSerpentine(
 
     const waypoints = extractWaypointsFromGrid(gridPath, grid);
     const structure = buildPathStructure(waypoints, cellSize);
-    return { waypoints, structure };
+    return { waypoints, structure, fillRatio: fillRatioOf() };
   }
 
   const gridSegments: GridPoint[][] = [];
@@ -719,5 +738,96 @@ export function generateSerpentine(
 
   const waypoints = extractWaypointsFromSegments(gridSegments, grid);
   const structure = buildPathStructure(waypoints, cellSize);
-  return { waypoints, structure };
+  return { waypoints, structure, fillRatio: fillRatioOf() };
+}
+
+/**
+ * Produces an ordered list of (strokeWidth, minGap) perturbation pairs, sorted
+ * by total magnitude so we try the gentlest adjustments first.
+ */
+function fillCompletionCandidates(
+  baseStroke: number,
+  baseGap: number
+): Array<{ stroke: number; gap: number; magnitude: number }> {
+  const strokeDeltas = [0, -0.5, 0.5, -1, 1, -1.5, 1.5, -2, 2];
+  const gapDeltas = [0, -1, 1, -2, 2, -3, 3];
+  const candidates: Array<{ stroke: number; gap: number; magnitude: number }> = [];
+  for (const sd of strokeDeltas) {
+    for (const gd of gapDeltas) {
+      if (sd === 0 && gd === 0) continue; // base case is tried separately
+      const stroke = baseStroke + sd;
+      const gap = baseGap + gd;
+      if (stroke < 1) continue;
+      if (gap < 0) continue;
+      // Weight stroke changes a bit more than gap changes so visual impact is minimized.
+      candidates.push({ stroke, gap, magnitude: Math.abs(sd) * 1.25 + Math.abs(gd) });
+    }
+  }
+  candidates.sort((a, b) => a.magnitude - b.magnitude);
+  return candidates;
+}
+
+export function generateSerpentine(
+  boundary: BoundaryShape,
+  params: GenerationParams,
+  guides?: DirectionGuide[]
+): GenerationResult {
+  // Always try the user-requested params first.
+  const baseAttempt = generateSerpentineOnce(boundary, params, guides);
+
+  const wantsFullFill =
+    params.targetFillPercent >= 100 &&
+    (params.fillMode === 'continuous' || params.fillMode === 'wicked-wise');
+
+  const FULL_FILL_THRESHOLD = 0.999; // floating-point safety margin
+
+  if (!wantsFullFill || baseAttempt.fillRatio >= FULL_FILL_THRESHOLD) {
+    return {
+      waypoints: baseAttempt.waypoints,
+      structure: baseAttempt.structure,
+      params,
+      fillRatio: baseAttempt.fillRatio,
+      adjusted: false,
+    };
+  }
+
+  // Retry loop: perturb strokeWidth and minGap to find a fully-filling combo.
+  // Capped so a stubborn boundary doesn't freeze the UI.
+  const MAX_ATTEMPTS = 24;
+  let best = {
+    waypoints: baseAttempt.waypoints,
+    structure: baseAttempt.structure,
+    fillRatio: baseAttempt.fillRatio,
+    params,
+  };
+
+  const candidates = fillCompletionCandidates(params.strokeWidth, params.minGap);
+  let tried = 0;
+  for (const cand of candidates) {
+    if (tried >= MAX_ATTEMPTS) break;
+    tried++;
+    const tryParams: GenerationParams = {
+      ...params,
+      strokeWidth: cand.stroke,
+      minGap: cand.gap,
+    };
+    const attempt = generateSerpentineOnce(boundary, tryParams, guides);
+    if (attempt.fillRatio > best.fillRatio) {
+      best = {
+        waypoints: attempt.waypoints,
+        structure: attempt.structure,
+        fillRatio: attempt.fillRatio,
+        params: tryParams,
+      };
+    }
+    if (best.fillRatio >= FULL_FILL_THRESHOLD) break;
+  }
+
+  return {
+    waypoints: best.waypoints,
+    structure: best.structure,
+    params: best.params,
+    fillRatio: best.fillRatio,
+    adjusted: best.params !== params,
+  };
 }
