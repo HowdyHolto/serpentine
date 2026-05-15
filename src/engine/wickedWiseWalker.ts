@@ -15,6 +15,7 @@ import {
   isVerticalDir,
   computeSegmentLength,
   buildCandidateOrder,
+  diagonalCornerOpen,
   DirectionBiasMap,
 } from './serpentineGenerator';
 
@@ -120,6 +121,7 @@ function astarConnect(
       }
 
       if (!grid.isAvailable(nc, nr)) continue;
+      if (!diagonalCornerOpen(grid, curCol, curRow, d.dc, d.dr)) continue;
 
       const nk = key(nc, nr);
       const tentG = curG + 1;
@@ -237,6 +239,7 @@ export function wickedWiseContinuous(
       const nc = col + d.dc;
       const nr = row + d.dr;
       if (!grid.isAvailable(nc, nr)) continue;
+      if (!diagonalCornerOpen(grid, col, row, d.dc, d.dr)) continue;
 
       if (useLookahead) {
         if (!grid.isMoveSafe(nc, nr, use8)) continue;
@@ -259,6 +262,7 @@ export function wickedWiseContinuous(
         const nc = col + d.dc;
         const nr = row + d.dr;
         if (!grid.isAvailable(nc, nr)) continue;
+        if (!diagonalCornerOpen(grid, col, row, d.dc, d.dr)) continue;
         grid.occupy(nc, nr);
         gridPath.push({ col: nc, row: nr });
         col = nc;

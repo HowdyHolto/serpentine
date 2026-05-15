@@ -21,7 +21,8 @@
       "Bash(git rm *)",
       "Bash(git -c user.email=\"holto@local\" -c user.name=\"holto\" commit --amend --no-edit)",
       "Bash(git ls-tree *)",
-      "Bash(git -c user.email=holto@local -c user.name=holto commit -m 'Drop snake fallback; lean on seed variation to preserve walker character *)"
+      "Bash(git -c user.email=holto@local -c user.name=holto commit -m 'Drop snake fallback; lean on seed variation to preserve walker character *)",
+      "Bash(git -c user.email=holto@local -c user.name=holto commit -m 'Fix 45° corner cutting: diagonal moves now respect adjacent cells *)"
     ]
   }
 }

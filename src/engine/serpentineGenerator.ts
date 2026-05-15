@@ -103,14 +103,37 @@ export function computeSegmentLength(
   return rng.nextInt(minC, maxC);
 }
 
+/**
+ * Returns true if a move from (fromCol,fromRow) by (dc,dr) is geometrically
+ * unobstructed. For cardinal moves this is always true. For diagonal moves
+ * (both dc!=0 and dr!=0) it returns false if either of the two cells the
+ * diagonal cuts between is occupied — preventing the diagonal stroke from
+ * visually overlapping an existing stroke at the shared corner.
+ *
+ * Standard "no corner cutting" rule from grid-based pathfinding.
+ */
+export function diagonalCornerOpen(
+  grid: OccupancyGrid,
+  fromCol: number,
+  fromRow: number,
+  dc: number,
+  dr: number
+): boolean {
+  if (dc === 0 || dr === 0) return true;
+  return (
+    grid.isAvailable(fromCol + dc, fromRow) &&
+    grid.isAvailable(fromCol, fromRow + dr)
+  );
+}
+
 function getAvailableDirs(grid: OccupancyGrid, col: number, row: number, use8: boolean): WalkDirection[] {
   const dirs = use8 ? ALL_DIRS_8 : CARDINAL_DIRS;
   const result: WalkDirection[] = [];
   for (const dir of dirs) {
     const d = DELTAS[dir];
-    if (grid.isAvailable(col + d.dc, row + d.dr)) {
-      result.push(dir);
-    }
+    if (!grid.isAvailable(col + d.dc, row + d.dr)) continue;
+    if (!diagonalCornerOpen(grid, col, row, d.dc, d.dr)) continue;
+    result.push(dir);
   }
   return result;
 }
@@ -162,6 +185,7 @@ export function walkSegment(
       const nc = col + delta.dc;
       const nr = row + delta.dr;
       if (!grid.isAvailable(nc, nr)) break;
+      if (!diagonalCornerOpen(grid, col, row, delta.dc, delta.dr)) break;
       col = nc;
       row = nr;
       grid.occupy(col, row);
@@ -225,7 +249,10 @@ export function walkSegment(
     if (use8) {
       const diagDirs = DIAGONAL_DIRS.filter(d => {
         const dd = DELTAS[d];
-        return grid.isAvailable(col + dd.dc, row + dd.dr);
+        return (
+          grid.isAvailable(col + dd.dc, row + dd.dr) &&
+          diagonalCornerOpen(grid, col, row, dd.dc, dd.dr)
+        );
       });
       if (diagDirs.length > 0) {
         const pick = diagDirs[rng.nextInt(0, diagDirs.length - 1)];
@@ -385,6 +412,7 @@ export function trySerpentineStep(
     const nc = col + d.dc;
     const nr = row + d.dr;
     if (!grid.isAvailable(nc, nr)) continue;
+    if (!diagonalCornerOpen(grid, col, row, d.dc, d.dr)) continue;
     if (!grid.isMoveSafe(nc, nr, use8)) continue;
 
     grid.occupy(nc, nr);
@@ -398,6 +426,7 @@ export function trySerpentineStep(
     const nc = col + d.dc;
     const nr = row + d.dr;
     if (!grid.isAvailable(nc, nr)) continue;
+    if (!diagonalCornerOpen(grid, col, row, d.dc, d.dr)) continue;
 
     grid.occupy(nc, nr);
     gridPath.push({ col: nc, row: nr });
