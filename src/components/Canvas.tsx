@@ -32,6 +32,8 @@ interface CanvasProps {
   onPanEnd: () => void;
   screenToWorld: (sx: number, sy: number, rect: DOMRect) => Point;
   showWaypoints: boolean;
+  /** Hide everything but the lines: boundary, dimensions, handles, waypoints, guides, rulers. */
+  cleanView: boolean;
   onWaypointMove: (index: number, pos: Point) => void;
   structure: PathStructure | null;
   showHelp: boolean;
@@ -120,6 +122,7 @@ export function Canvas({
   onPanEnd,
   screenToWorld,
   showWaypoints,
+  cleanView,
   onWaypointMove,
   structure,
   showHelp,
@@ -478,9 +481,11 @@ export function Canvas({
   const arrowW = 4 / transform.scale;
   const handleStroke = 1.5 / transform.scale;
 
+  const rulerSize = cleanView ? 0 : RULER_SIZE;
+
   return (
     <div ref={containerRef} className="flex-1 relative overflow-hidden">
-      {containerSize.width > 0 && (
+      {!cleanView && containerSize.width > 0 && (
         <Rulers
           transform={transform}
           containerWidth={containerSize.width}
@@ -493,10 +498,10 @@ export function Canvas({
         className={`absolute select-none ${cursorClass}`}
         style={{
           background: colors.canvasBg,
-          top: RULER_SIZE,
-          left: RULER_SIZE,
-          width: containerSize.width - RULER_SIZE,
-          height: containerSize.height - RULER_SIZE,
+          top: rulerSize,
+          left: rulerSize,
+          width: containerSize.width - rulerSize,
+          height: containerSize.height - rulerSize,
         }}
         onWheel={onWheel}
         onMouseDown={handleMouseDown}
@@ -536,7 +541,7 @@ export function Canvas({
         </defs>
 
         <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
-          {boundary && boundary.type === 'rectangle' && (
+          {!cleanView && boundary && boundary.type === 'rectangle' && (
             <rect
               x={boundary.x}
               y={boundary.y}
@@ -548,7 +553,7 @@ export function Canvas({
               strokeDasharray={`${4 / transform.scale} ${3 / transform.scale}`}
             />
           )}
-          {boundary && boundary.type === 'ellipse' && (
+          {!cleanView && boundary && boundary.type === 'ellipse' && (
             <ellipse
               cx={boundary.x + boundary.width / 2}
               cy={boundary.y + boundary.height / 2}
@@ -575,11 +580,11 @@ export function Canvas({
             ))}
           </g>
 
-          {boundary && (
+          {!cleanView && boundary && (
             <BoundaryDimensions boundary={boundary} scale={transform.scale} />
           )}
 
-          {boundary && activeTool === 'select' && (
+          {!cleanView && boundary && activeTool === 'select' && (
             <ResizeHandles
               boundary={boundary}
               handleSize={resizeHandleSize}
@@ -590,7 +595,7 @@ export function Canvas({
             />
           )}
 
-          {showWaypoints &&
+          {showWaypoints && !cleanView &&
             waypoints.map((wp, i) => {
               const isFrozen = frozenIndices.has(i);
               const isInGroup = activeGroup.has(i);
@@ -656,7 +661,7 @@ export function Canvas({
               );
             })}
 
-          {guides.map((guide, i) => {
+          {!cleanView && guides.map((guide, i) => {
             const angle = GUIDE_DIR_ANGLES[guide.direction];
             const sz = 10 / transform.scale;
             const sw = 2 / transform.scale;
@@ -687,7 +692,7 @@ export function Canvas({
             );
           })}
 
-          {activeTool === 'redirect' && ghostGuidePos && (
+          {!cleanView && activeTool === 'redirect' && ghostGuidePos && (
             <g transform={`translate(${ghostGuidePos.x}, ${ghostGuidePos.y})`} opacity={0.35}>
               <circle
                 r={10 / transform.scale * 1.6}

@@ -12,6 +12,8 @@ import {
   Compass,
   Trash2,
   Maximize,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { ActiveTool } from '../types';
 import { colors, gradients } from '../theme';
@@ -29,6 +31,8 @@ interface ToolbarProps {
   guideCount: number;
   onClearGuides: () => void;
   onFitView: () => void;
+  cleanView: boolean;
+  onToggleCleanView: () => void;
 }
 
 function ToolButton({
@@ -78,6 +82,8 @@ export function Toolbar({
   guideCount,
   onClearGuides,
   onFitView,
+  cleanView,
+  onToggleCleanView,
 }: ToolbarProps) {
   return (
     <div
@@ -120,6 +126,9 @@ export function Toolbar({
 
       <ToolButton onClick={onFitView} title="Fit boundary to view (0)">
         <Maximize size={15} />
+      </ToolButton>
+      <ToolButton active={cleanView} onClick={onToggleCleanView} title="Lines only: hide boundary, points and guides (H)">
+        {cleanView ? <EyeOff size={15} /> : <Eye size={15} />}
       </ToolButton>
 
       <Divider />

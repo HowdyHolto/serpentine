@@ -99,6 +99,7 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
         <SectionTitle title="Actions" />
         <ShortcutRow keys="G" label="Generate path" />
         <ShortcutRow keys="W" label="Toggle waypoints" />
+        <ShortcutRow keys="H" label="Lines only (hide boundary, points, guides)" />
         <ShortcutRow keys="?" label="Toggle this panel" />
 
         <SectionTitle title="Navigation" />

@@ -33,6 +33,7 @@ export default function App() {
   const [structure, setStructure] = useState<PathStructure | null>(null);
   const [activeTool, setActiveTool] = useState<ActiveTool>('rectangle');
   const [showWaypoints, setShowWaypoints] = useState(true);
+  const [cleanView, setCleanView] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [frozenIndices, setFrozenIndices] = useState<Set<number>>(new Set());
   const [frozenParams, setFrozenParams] = useState<GenerationParams | null>(null);
@@ -312,6 +313,9 @@ export default function App() {
         case 'w':
           setShowWaypoints((prev) => !prev);
           break;
+        case 'h':
+          setCleanView((prev) => !prev);
+          break;
         case 'f':
           handleUnfreezeAllRef.current();
           break;
@@ -339,6 +343,8 @@ export default function App() {
         guideCount={guides.length}
         onClearGuides={handleClearGuides}
         onFitView={fitView}
+        cleanView={cleanView}
+        onToggleCleanView={() => setCleanView((prev) => !prev)}
       />
       <div className="flex flex-1 min-h-0">
         <Canvas
@@ -356,6 +362,7 @@ export default function App() {
           onPanEnd={handlePanEnd}
           screenToWorld={screenToWorld}
           showWaypoints={showWaypoints}
+          cleanView={cleanView}
           onWaypointMove={handleWaypointMove}
           structure={structure}
           showHelp={showHelp}
