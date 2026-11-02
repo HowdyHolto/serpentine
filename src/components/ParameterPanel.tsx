@@ -565,6 +565,17 @@ export function ParameterPanel({
               </p>
             </div>
             <SliderControl
+              label="Transition"
+              value={style.gradientSpread}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => updateStyle('gradientSpread', v)}
+            />
+            <p className="text-[10px] -mt-1.5 leading-snug" style={{ color: colors.textFaint }}>
+              How much of the way between two colours is spent blending: 1 is a smooth sweep, 0 is hard bands.
+            </p>
+            <SliderControl
               label="Repeats"
               value={style.gradientCycles}
               min={1}

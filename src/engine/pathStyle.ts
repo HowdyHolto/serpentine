@@ -211,13 +211,20 @@ export function rgbToHex(r: number, g: number, b: number): string {
   return `#${c(r)}${c(g)}${c(b)}`;
 }
 
-/** Colour at `t` in 0..1 across evenly spaced stops (linear in RGB). */
-export function gradientColor(stops: string[], t: number): string {
+/**
+ * Colour at `t` in 0..1 across evenly spaced stops (linear in RGB).
+ * `spread` (0..1, default 1) is the fraction of each stop-to-stop interval
+ * spent blending, centred in the interval: 1 is a plain linear blend, 0 a
+ * hard switch halfway between the stops.
+ */
+export function gradientColor(stops: string[], t: number, spread = 1): string {
   if (stops.length === 0) return '#ffffff';
   if (stops.length === 1) return rgbToHex(...hexToRgb(stops[0]));
   const u = Math.max(0, Math.min(1, t)) * (stops.length - 1);
   const i = Math.min(stops.length - 2, Math.floor(u));
-  const f = u - i;
+  const w = Math.max(0, Math.min(1, spread));
+  const raw = u - i;
+  const f = w <= 0 ? (raw < 0.5 ? 0 : 1) : Math.max(0, Math.min(1, (raw - (1 - w) / 2) / w));
   const a = hexToRgb(stops[i]), b = hexToRgb(stops[i + 1]);
   return rgbToHex(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f);
 }
@@ -274,7 +281,7 @@ function scopePaths(paths: RenderedPath[], style: PathStyle): ScopedPath[] {
 
 function colorAt(sp: ScopedPath, s: number, style: PathStyle): string {
   const t = sp.span > 0 ? (sp.base + s) / sp.span : 0;
-  return gradientColor(style.gradientStops, cycleT(t, style.gradientCycles));
+  return gradientColor(style.gradientStops, cycleT(t, style.gradientCycles), style.gradientSpread ?? 1);
 }
 
 /** True when the stroke itself should be drawn (markers may replace it). */

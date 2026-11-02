@@ -56,6 +56,13 @@ export interface PathStyle {
   /** Two or three hex colour stops, evenly spaced along the length. */
   gradientStops: string[];
   gradientScope: GradientScope;
+  /**
+   * 0..1: how much of the distance between two stops is spent blending.
+   * 1 blends the whole way (smooth); 0 switches colour sharply halfway
+   * between stops (hard bands); in between, each stop holds its colour
+   * and the transition is centred between them.
+   */
+  gradientSpread: number;
   /** How many times the gradient runs along the length (mirrored, so it never jumps). 1 = once. */
   gradientCycles: number;
   /** Place shapes along the path. */
@@ -217,6 +224,7 @@ export const DEFAULT_STYLE: PathStyle = {
   gradientEnabled: false,
   gradientStops: ['#ff4d8d', '#ffd166', '#2ec4ff'],
   gradientScope: 'per-run',
+  gradientSpread: 1,
   gradientCycles: 1,
   markersEnabled: false,
   markerShape: 'dot',

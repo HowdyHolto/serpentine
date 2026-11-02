@@ -110,6 +110,30 @@ describe('colour', () => {
     expect(gradientColor(['#ff0000', '#00ff00', '#0000ff'], 0.25)).toBe('#808000');
   });
 
+  it('spread shortens the blend between stops down to hard bands', () => {
+    const stops = ['#000000', '#ffffff'];
+    // Spread 1 is the plain linear blend.
+    expect(gradientColor(stops, 0.25, 1)).toBe(gradientColor(stops, 0.25));
+    // Spread 0.5: the first and last quarter hold the stop colour, the middle half blends.
+    expect(gradientColor(stops, 0.2, 0.5)).toBe('#000000');
+    expect(gradientColor(stops, 0.5, 0.5)).toBe('#808080');
+    expect(gradientColor(stops, 0.8, 0.5)).toBe('#ffffff');
+    expect(gradientColor(stops, 0.375, 0.5)).toBe('#404040');
+    // Spread 0: a hard switch halfway between stops, also between three stops.
+    expect(gradientColor(stops, 0.49, 0)).toBe('#000000');
+    expect(gradientColor(stops, 0.51, 0)).toBe('#ffffff');
+    const three = ['#ff0000', '#00ff00', '#0000ff'];
+    expect(gradientColor(three, 0.2, 0)).toBe('#ff0000');
+    expect(gradientColor(three, 0.3, 0)).toBe('#00ff00');
+    expect(gradientColor(three, 0.7, 0)).toBe('#00ff00');
+    expect(gradientColor(three, 0.8, 0)).toBe('#0000ff');
+    // Pieces honour it: with spread 0 only the two stop colours appear.
+    const run: RenderedPath = { d: 'M 0 0 L 280 0', strokeWidth: 8, run: 0 };
+    const out = applyPathStyle([run], params({}, { gradientEnabled: true, gradientStops: stops, gradientSpread: 0 }));
+    const seen = new Set(out.paths.map((q) => q.stroke));
+    expect([...seen].sort()).toEqual(['#000000', '#ffffff']);
+  });
+
   it('cycles mirror so a repeated gradient never jumps', () => {
     expect(cycleT(0, 1)).toBe(0);
     expect(cycleT(1, 1)).toBe(1);
@@ -374,5 +398,6 @@ describe('export and saves', () => {
     const b = normaliseArrangement({ boundary: RECT, params: { ...oldParams, style: { gradientEnabled: true } }, waypoints: [] });
     expect(b.params.style.gradientEnabled).toBe(true);
     expect(b.params.style.markerShape).toBe('dot');
+    expect(b.params.style.gradientSpread).toBe(1);
   });
 });
