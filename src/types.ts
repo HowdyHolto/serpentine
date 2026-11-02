@@ -107,7 +107,7 @@ export const DEFAULT_PARAMS: GenerationParams = {
   directionSwitchFrequency: 0.12,
   seed: Math.floor(Math.random() * 999999),
   cornerRadius: 7,
-  ringHarmony: 1,
+  ringHarmony: 0.5,
   gapsEnabled: false,
   gapFrequencyMin: 80,
   gapFrequencyMax: 200,

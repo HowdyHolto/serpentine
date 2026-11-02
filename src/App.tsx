@@ -57,7 +57,20 @@ export default function App() {
     handlePanMove,
     handlePanEnd,
     screenToWorld,
+    zoomToFit,
   } = useCanvasTransform();
+
+  const canvasSizeRef = useRef({ width: 0, height: 0 });
+  const handleCanvasSize = useCallback((width: number, height: number) => {
+    canvasSizeRef.current = { width, height };
+  }, []);
+
+  const fitView = useCallback(() => {
+    if (!boundary) return;
+    const { width, height } = canvasSizeRef.current;
+    if (width <= 0 || height <= 0) return;
+    zoomToFit(boundary.x, boundary.y, boundary.width, boundary.height, width, height);
+  }, [boundary, zoomToFit]);
 
   const generate = useCallback(() => {
     if (!boundary) return;
@@ -70,8 +83,8 @@ export default function App() {
     if (result.adjusted) {
       const dStroke = result.params.strokeWidth - params.strokeWidth;
       const dGap = result.params.minGap - params.minGap;
-      const dSeed = result.params.seed - params.seed;
       const pct = Math.round(result.fillRatio * 100);
+      const reachedFull = result.fillRatio >= 0.999;
       const visibleParts: string[] = [];
       if (dStroke !== 0) {
         visibleParts.push(`width ${params.strokeWidth}→${result.params.strokeWidth}`);
@@ -79,13 +92,14 @@ export default function App() {
       if (dGap !== 0) {
         visibleParts.push(`spacing ${params.minGap}→${result.params.minGap}`);
       }
-      if (visibleParts.length === 0 && dSeed !== 0) {
-        // Seed-only retry — visually invisible, but worth telling the user.
-        setToastMessage(`Reseeded to reach ${pct}% fill`);
-      } else if (visibleParts.length > 0) {
+      if (!reachedFull) {
         setToastMessage(
-          `Adjusted ${visibleParts.join(', ')} to reach ${pct}% fill`
+          `Best coverage ${pct}% after retries. Try another seed, a smaller gap, or Multi-Pass.`
         );
+      } else if (visibleParts.length > 0) {
+        setToastMessage(`Adjusted ${visibleParts.join(', ')} to fill completely`);
+      } else {
+        setToastMessage('Reseeded to fill completely');
       }
     } else if (
       params.targetFillPercent >= 100 &&
@@ -178,18 +192,18 @@ export default function App() {
 
   const handleWaypointMove = useCallback(
     (index: number, pos: Point) => {
-      setWaypoints((prev) => {
-        const renderParams = frozenParamsRef.current || params;
-        if (!structure) {
-          const next = [...prev];
-          next[index] = { ...next[index], x: pos.x, y: pos.y };
-          setPaths(renderPaths(next, renderParams));
-          return next;
-        }
-        const next = resolveConstrainedMove(prev, index, pos, structure, boundary);
-        setPaths(renderPaths(next, renderParams));
-        return next;
-      });
+      const prev = waypointsRef.current;
+      const renderParams = frozenParamsRef.current || params;
+      let next: Waypoint[];
+      if (!structure) {
+        next = [...prev];
+        next[index] = { ...next[index], x: pos.x, y: pos.y };
+      } else {
+        next = resolveConstrainedMove(prev, index, pos, structure, boundary);
+      }
+      waypointsRef.current = next;
+      setWaypoints(next);
+      setPaths(renderPaths(next, renderParams));
     },
     [params, structure, boundary]
   );
@@ -264,6 +278,8 @@ export default function App() {
   handleGenerateRef.current = handleGenerate;
   const handleUnfreezeAllRef = useRef(handleUnfreezeAll);
   handleUnfreezeAllRef.current = handleUnfreezeAll;
+  const fitViewRef = useRef(fitView);
+  fitViewRef.current = fitView;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -297,6 +313,9 @@ export default function App() {
         case 'f':
           handleUnfreezeAllRef.current();
           break;
+        case '0':
+          fitViewRef.current();
+          break;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -317,6 +336,7 @@ export default function App() {
         onUnfreezeAll={handleUnfreezeAll}
         guideCount={guides.length}
         onClearGuides={handleClearGuides}
+        onFitView={fitView}
       />
       <div className="flex flex-1 min-h-0">
         <Canvas
@@ -345,6 +365,7 @@ export default function App() {
           onGuideAdd={handleGuideAdd}
           onGuideCycle={handleGuideCycle}
           onGuideRemove={handleGuideRemove}
+          onCanvasSize={handleCanvasSize}
         />
         <ParameterPanel
           params={params}

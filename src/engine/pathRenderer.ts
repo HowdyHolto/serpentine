@@ -59,20 +59,45 @@ function waypointsToSvgPath(
         continue;
       }
 
-      const maxR = Math.min(len1 / 2, len2 / 2);
-      const fixedR = Math.min(cornerRadius, maxR);
-      const propR = harmonicR > 0 ? (cornerRadius / harmonicR) * maxR : fixedR;
-      const r = fixedR + (Math.min(propR, maxR) - fixedR) * ringHarmony;
-
       const n1x = d1x / len1;
       const n1y = d1y / len1;
       const n2x = d2x / len2;
       const n2y = d2y / len2;
 
-      const ax = curr.x - n1x * r;
-      const ay = curr.y - n1y * r;
-      const bx = curr.x + n2x * r;
-      const by = curr.y + n2y * r;
+      // Deflection angle between the incoming and outgoing legs.
+      const dot = Math.max(-1, Math.min(1, n1x * n2x + n1y * n2y));
+      const theta = Math.acos(dot);
+      if (theta < 1e-6) {
+        // Collinear: no corner to round.
+        d += ` L ${curr.x} ${curr.y}`;
+        continue;
+      }
+      const tanHalf = Math.tan(theta / 2);
+
+      // Target radius. "Ring harmony" lets corners with room grow up to one
+      // cell of radius, so nested hairpins read as concentric rings. It is
+      // capped at the cell size: the old formula scaled with leg length and
+      // produced huge domes on long-to-long corners.
+      const maxLeg = Math.min(len1 / 2, len2 / 2);
+      const harmonyCap = harmonicR > 0 ? harmonicR * 2 : cornerRadius;
+      const harmonyR = Math.min(harmonyCap, maxLeg);
+      const targetR = cornerRadius + (Math.max(harmonyR, cornerRadius) - cornerRadius) * ringHarmony;
+
+      // Tangent length along each leg for a circular arc of radius R meeting
+      // both legs tangentially is R * tan(theta / 2). Clamp it to half a leg
+      // and derive the radius that actually fits.
+      const t = Math.min(targetR * tanHalf, maxLeg);
+      const r = t / tanHalf;
+
+      if (t <= 1e-6) {
+        d += ` L ${curr.x} ${curr.y}`;
+        continue;
+      }
+
+      const ax = curr.x - n1x * t;
+      const ay = curr.y - n1y * t;
+      const bx = curr.x + n2x * t;
+      const by = curr.y + n2y * t;
 
       const cross = n1x * n2y - n1y * n2x;
       const sweep = cross > 0 ? 1 : 0;

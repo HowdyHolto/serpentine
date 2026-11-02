@@ -105,6 +105,7 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
         <ShortcutRow keys="Space+Drag" label="Pan canvas" />
         <ShortcutRow keys="Alt+Click" label="Pan canvas" />
         <ShortcutRow keys="Scroll" label="Zoom in/out" />
+        <ShortcutRow keys="0" label="Fit boundary to view" />
 
         <SectionTitle title="Editing" />
         <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>

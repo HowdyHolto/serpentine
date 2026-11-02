@@ -10,10 +10,12 @@ export class OccupancyGrid {
 
   constructor(boundary: BoundaryShape, cellSize: number) {
     this.cellSize = cellSize;
-    this.originX = boundary.x;
-    this.originY = boundary.y;
     this.cols = Math.max(1, Math.floor(boundary.width / cellSize));
     this.rows = Math.max(1, Math.floor(boundary.height / cellSize));
+    // Center the grid inside the boundary so the leftover fraction of a cell
+    // is split evenly between both sides instead of piling up right/bottom.
+    this.originX = boundary.x + (boundary.width - this.cols * cellSize) / 2;
+    this.originY = boundary.y + (boundary.height - this.rows * cellSize) / 2;
 
     this.grid = Array.from({ length: this.rows }, () =>
       Array.from({ length: this.cols }, () => false)
@@ -24,14 +26,14 @@ export class OccupancyGrid {
 
   private markOutOfBounds(boundary: BoundaryShape) {
     if (boundary.type === 'ellipse') {
-      const cx = boundary.width / 2;
-      const cy = boundary.height / 2;
+      const cx = boundary.x + boundary.width / 2;
+      const cy = boundary.y + boundary.height / 2;
       const rx = boundary.width / 2;
       const ry = boundary.height / 2;
       for (let row = 0; row < this.rows; row++) {
         for (let col = 0; col < this.cols; col++) {
-          const x = (col + 0.5) * this.cellSize;
-          const y = (row + 0.5) * this.cellSize;
+          const x = this.originX + (col + 0.5) * this.cellSize;
+          const y = this.originY + (row + 0.5) * this.cellSize;
           const dx = (x - cx) / rx;
           const dy = (y - cy) / ry;
           if (dx * dx + dy * dy > 1) {

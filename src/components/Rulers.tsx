@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { CanvasTransform } from '../types';
 import { colors } from '../theme';
 
-export const PX_PER_MM = 3.7795275591;
+import { PX_PER_MM } from '../engine/units';
 const RULER_SIZE = 20;
+export { PX_PER_MM };
 
 interface RulersProps {
   transform: CanvasTransform;
@@ -21,19 +22,19 @@ function niceInterval(rawInterval: number): number {
 }
 
 function computeTicks(
-  start: number,
-  end: number,
+  offset: number,
+  length: number,
   scale: number,
   minPixelSpacing: number
 ): { positions: number[]; interval: number; subInterval: number } {
-  const worldRange = (end - start) / scale;
-  const mmRange = worldRange / PX_PER_MM;
+  // Screen pixel s maps to world (s - offset) / scale. Cover the visible span.
+  const mmRange = (length / scale) / PX_PER_MM;
   const rawInterval = (minPixelSpacing / scale) / PX_PER_MM;
   const interval = niceInterval(rawInterval);
   const subInterval = interval / 5;
 
-  const mmStart = ((-start / scale) / PX_PER_MM);
-  const mmEnd = mmStart + mmRange;
+  const mmStart = ((-offset / scale) / PX_PER_MM) - interval;
+  const mmEnd = mmStart + mmRange + interval * 2;
 
   const firstMajor = Math.ceil(mmStart / interval) * interval;
   const positions: number[] = [];
@@ -53,7 +54,7 @@ function HorizontalRuler({
   width: number;
 }) {
   const ticks = useMemo(
-    () => computeTicks(0, width, transform.scale, 60),
+    () => computeTicks(transform.x, width, transform.scale, 60),
     [width, transform.scale, transform.x]
   );
 
@@ -91,7 +92,7 @@ function HorizontalRuler({
                 fontSize={8}
                 fontFamily="ui-monospace, monospace"
               >
-                {mm % 1 === 0 ? mm : mm.toFixed(1)}
+                {Math.abs(mm % 1) < 1e-9 ? Math.round(mm) : mm.toFixed(1)}
               </text>
             </g>
           );
@@ -131,7 +132,7 @@ function VerticalRuler({
   height: number;
 }) {
   const ticks = useMemo(
-    () => computeTicks(0, height, transform.scale, 60),
+    () => computeTicks(transform.y, height, transform.scale, 60),
     [height, transform.scale, transform.y]
   );
 
@@ -170,7 +171,7 @@ function VerticalRuler({
                 textAnchor="end"
                 dominantBaseline="middle"
               >
-                {mm % 1 === 0 ? mm : mm.toFixed(1)}
+                {Math.abs(mm % 1) < 1e-9 ? Math.round(mm) : mm.toFixed(1)}
               </text>
             </g>
           );

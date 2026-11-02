@@ -43,6 +43,7 @@ interface CanvasProps {
   onGuideAdd: (guide: DirectionGuide) => void;
   onGuideCycle: (index: number) => void;
   onGuideRemove: (index: number) => void;
+  onCanvasSize?: (width: number, height: number) => void;
 }
 
 function hitTestWaypoints(
@@ -130,6 +131,7 @@ export function Canvas({
   onGuideAdd,
   onGuideCycle,
   onGuideRemove,
+  onCanvasSize,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -163,6 +165,7 @@ export function Canvas({
           width: entry.contentRect.width,
           height: entry.contentRect.height,
         });
+        onCanvasSize?.(entry.contentRect.width - RULER_SIZE, entry.contentRect.height - RULER_SIZE);
       }
     });
 
@@ -171,9 +174,10 @@ export function Canvas({
       width: container.clientWidth,
       height: container.clientHeight,
     });
+    onCanvasSize?.(container.clientWidth - RULER_SIZE, container.clientHeight - RULER_SIZE);
 
     return () => observer.disconnect();
-  }, []);
+  }, [onCanvasSize]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -378,7 +382,7 @@ export function Canvas({
   );
 
   const handleMouseUp = useCallback(
-    (_e: React.MouseEvent) => {
+    () => {
       if (marqueeStart && marqueeEnd) {
         const minX = Math.min(marqueeStart.x, marqueeEnd.x);
         const minY = Math.min(marqueeStart.y, marqueeEnd.y);

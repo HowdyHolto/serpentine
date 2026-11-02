@@ -252,24 +252,49 @@ export function ParameterPanel({
             onChange={(v) => update('fillMode', v)}
           />
         </div>
-        <SliderControl
-          label="Target Fill %"
-          value={params.targetFillPercent}
-          min={10}
-          max={100}
-          onChange={(v) => update('targetFillPercent', v)}
-        />
-        {params.fillMode === 'multi-pass' && (
-          <SliderControl
-            label="Max Separate Paths"
-            value={params.maxPasses}
-            min={1}
-            max={30}
-            onChange={(v) => update('maxPasses', v)}
-          />
+        {params.fillMode === 'multi-pass' ? (
+          <>
+            <SliderControl
+              label="Target Fill %"
+              value={params.targetFillPercent}
+              min={10}
+              max={100}
+              onChange={(v) => update('targetFillPercent', v)}
+            />
+            <SliderControl
+              label="Max Separate Paths"
+              value={params.maxPasses}
+              min={1}
+              max={30}
+              onChange={(v) => update('maxPasses', v)}
+            />
+          </>
+        ) : (
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px]" style={{ color: colors.textMuted }}>Fill Completely</label>
+              <button
+                onClick={() => update('targetFillPercent', params.targetFillPercent >= 100 ? 75 : 100)}
+                className="w-9 h-5 rounded-full relative transition-all duration-200"
+                title="Retry with nearby seeds until the boundary is fully covered (slower)"
+                style={{
+                  background: params.targetFillPercent >= 100 ? 'rgba(14,201,176,0.9)' : 'rgba(255,255,255,0.1)',
+                  boxShadow: params.targetFillPercent >= 100 ? `0 0 8px ${colors.accentBorder}` : 'none',
+                }}
+              >
+                <span
+                  className="absolute top-0.5 w-4 h-4 rounded-full transition-all duration-200"
+                  style={{ background: '#fff', left: params.targetFillPercent >= 100 ? '18px' : '2px' }}
+                />
+              </button>
+            </div>
+            <div className="text-[10px] mt-1" style={{ color: colors.textFaint }}>
+              Sweeps nearby seeds and keeps the best coverage. Slower.
+            </div>
+          </div>
         )}
         <SliderControl
-          label="Direction Bias (V / H)"
+          label="Horizontal Bias"
           value={params.fillDirectionBias}
           min={0}
           max={1}

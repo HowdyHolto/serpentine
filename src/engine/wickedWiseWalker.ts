@@ -48,6 +48,37 @@ function evaluateFreedom(
   return reachable;
 }
 
+/**
+ * Blend between "follow the serpentine preference order" (1) and "take the
+ * tightest Warnsdorff move" (0). Benchmarked on a 36x38 grid, 12 seeds:
+ * 0.7 behaves like plain Continuous (median 10% fill), 0.45 gives 44%,
+ * 0.2 gives 63% and fills 45-degree mode completely on every seed.
+ */
+const WICKED_PREF_WEIGHT = 0.2;
+
+/** Free neighbours of (col,row) other than the cell we are coming from. */
+function countOnward(
+  grid: OccupancyGrid,
+  col: number,
+  row: number,
+  fromCol: number,
+  fromRow: number,
+  use8: boolean
+): number {
+  const dirs = use8 ? ALL_DIRS_8 : CARDINAL_DIRS;
+  let n = 0;
+  for (const dir of dirs) {
+    const d = DELTAS[dir];
+    const nc = col + d.dc;
+    const nr = row + d.dr;
+    if (nc === fromCol && nr === fromRow) continue;
+    if (!grid.isAvailable(nc, nr)) continue;
+    if (!diagonalCornerOpen(grid, col, row, d.dc, d.dr)) continue;
+    n++;
+  }
+  return n;
+}
+
 function astarConnect(
   grid: OccupancyGrid,
   startCol: number,
@@ -243,11 +274,18 @@ export function wickedWiseContinuous(
 
       if (useLookahead) {
         if (!grid.isMoveSafe(nc, nr, use8)) continue;
-        const freedom = evaluateFreedom(grid, nc, nr, use8);
+        // Every move that passed isMoveSafe leaves all remaining cells
+        // reachable, so a flood-fill "freedom" count is identical for all of
+        // them and cannot rank anything. Use Warnsdorff's rule instead:
+        // prefer the cell with the fewest onward options, which keeps the
+        // walker hugging walls and already-filled areas instead of cutting
+        // through open space and stranding pockets.
+        const onward = countOnward(grid, nc, nr, col, row, use8);
         const prefScore = candidates.indexOf(dir);
         const normalizedPref = 1 - prefScore / Math.max(candidates.length - 1, 1);
-        const normalizedFreedom = freedom / Math.max(totalAvailable - 1, 1);
-        const score = normalizedPref * 0.3 + normalizedFreedom * 0.7;
+        const maxOnward = use8 ? 7 : 3;
+        const tightness = 1 - onward / maxOnward;
+        const score = normalizedPref * WICKED_PREF_WEIGHT + tightness * (1 - WICKED_PREF_WEIGHT);
         scored.push({ dir, nc, nr, score });
       } else {
         if (!grid.isMoveSafe(nc, nr, use8)) continue;
@@ -256,6 +294,7 @@ export function wickedWiseContinuous(
     }
 
     if (scored.length === 0) {
+      let fellBack = false;
       const fallbackDirs = use8 ? ALL_DIRS_8 : CARDINAL_DIRS;
       for (const dir of fallbackDirs) {
         const d = DELTAS[dir];
@@ -272,11 +311,13 @@ export function wickedWiseContinuous(
         lateralPref = getLateralDirs(heading)[0];
         stepsInHeading = 1;
         targetLen = computeSegmentLength(params, cellSize, rng);
+        fellBack = true;
         break;
       }
-      if (scored.length === 0 && gridPath[gridPath.length - 1].col === col && gridPath[gridPath.length - 1].row === row) {
-        break;
-      }
+      // Previously this compared the path tail to (col,row), which was always
+      // true after a successful fallback, so the walker quit at the first
+      // unsafe step. Only stop when there was genuinely nowhere to go.
+      if (!fellBack) break;
       continue;
     }
 

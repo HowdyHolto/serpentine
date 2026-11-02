@@ -1,0 +1,130 @@
+# Serpentine: second-look review (2026-11-02)
+
+## Where it lives
+
+| What | Where |
+|---|---|
+| Source of truth | GitHub `HowdyHolto/serpentine` (public, "Pattern Generator 1"), branch `main`, HEAD `6a5dbde` |
+| Local clone | `Desktop/Claude Stuff/serpentine` (cloned today; there was no local copy anywhere on this Mac) |
+| Live site | https://serpentine-app.netlify.app (Netlify project `serpentine-app`, site id `1173e721-344a-45ab-96dc-da1d6de95c43`) |
+| Deploy state | Production deploy is commit `6a5dbde`, i.e. the live site == repo HEAD |
+| How it was deployed | Via the Netlify MCP from a Claude session (deploy source "api"), not a GitHub build hook. Pushing to GitHub probably will not redeploy by itself. |
+| Origin | Bolt.new scaffold (Vite + React 18 + TS + Tailwind + lucide), 5 commits total, last work 2026-05-15 |
+| Related | `Experiments/Claude UI Experiments/batch-suite` lists Serpentine as a "soon" tile in the Batch tools suite |
+
+Stack health: `tsc` clean, `vite build` clean (214 kB JS), eslint has 1 error (unused `_e` in Canvas.tsx:381) and 2 warnings (stale `useMemo` deps in Rulers.tsx). No tests.
+
+## What the app does today
+
+A single-page tool: draw a rectangle or ellipse boundary (rulers in mm, 96 dpi), then fill it with a non-crossing serpentine stroke on an occupancy grid whose cell size is `strokeWidth + minGap`. Features that exist and work:
+
+- Three fill modes: Continuous (one line), Multi-Pass (several lines), Wicked Wise (lookahead + backtracking walker)
+- 90° / 45° angle modes, rounded or squared turns, corner radius + "Ring Harmony", round or flat caps
+- Fixed or random segment length, direction bias, direction-switch frequency, optional gaps along the stroke, seed
+- Waypoint editing: drag turns (axis-locked, hairpin pairs move together, min spacing enforced), freeze waypoints (shift-click / marquee) and regenerate only the unfrozen gaps, direction-guide arrows that bias the walker locally
+- Resize boundary by edge handles, pan/zoom, keyboard shortcuts, help panel, SVG export
+
+Dead or half-built: the Pen tool button (`P`) is wired to nothing (no Canvas handler, `BoundaryShape.type = 'path'` never used); `AngleMode = 30` exists in the type but has no UI or walker support; `zoomToFit` exists in the hook but nothing calls it; `Target Fill %` has no effect in Continuous/Wicked Wise below 100.
+
+## Measured behaviour (headless, 512×538 px rect, cell 14 → 36×38 grid, 10 seeds)
+
+| Mode | Fill mean | Fill median | Fill min–max | Time |
+|---|---|---|---|---|
+| Continuous 90°, target 75 | 15% | 10% | 3–65% | 2 ms |
+| Wicked Wise 90°, target 75 | 7% | 8% | 2–12% | 8 ms |
+| Multi-Pass 90°, target 75 | 59% | 60% | 39–75% | 1 ms |
+| Continuous 45°, target 75 | 19% | 25% | 2–42% | 8 ms |
+| Wicked Wise 45°, target 75 | 7% | 8% | 1–12% | 17 ms |
+| Continuous 90°, target 100 (retry sweep) | 96% | 99% | 63–100% | 500–630 ms |
+| Continuous 45°, target 100 (retry sweep) | 95% | 100% | 69–100% | 1.0–1.4 s |
+| Wicked Wise 90°, target 100 (retry sweep) | 18% | 18% | 12–30% | 540–670 ms |
+| Dense grid (stroke 2, gap 2 → 128×134 cells), Continuous, target 75 | 12% | 4% | 1–77% | 80 ms median, 2.1 s max |
+
+Giant corner arcs (arc radius larger than one cell) at the default Ring Harmony of 1.00: about 12 per generation, max radius 77 px at target 75 and 247 px at target 100. With Ring Harmony 0: zero.
+
+## Root causes (the "math we couldn't nail")
+
+1. **The walker is greedy and self-traps.** `trySerpentineStep` (serpentineGenerator.ts:416) only takes a move if `isMoveSafe` says the remaining free cells stay connected. When no such move exists it falls through to the unsafe fallback (line 423) and splits the free area in two, and from then on it can only ever finish the half it is standing in. That is why median fill is 10%. The 100% "fix" from May is a brute-force sweep of up to 80 seeds that keeps whichever one happened not to trap; when it succeeds it is almost always a plain full-height hairpin (boustrophedon), which is why the 100% result loses all the character of the other seeds.
+
+2. **Wicked Wise terminates at the first unsafe situation.** wickedWiseWalker.ts:277 checks `gridPath[last] === (col,row)` to detect "no fallback move found", but `col,row` were just updated to the fallback cell, so the condition is always true and the loop breaks. The "smart" walker therefore stops earlier than the plain one (7% vs 15%).
+
+3. **Ring Harmony math blows up at long-to-long corners.** pathRenderer.ts:64-65: `propR = (cornerRadius / harmonicR) * maxR` where `maxR = min(len1, len2)/2`. With the defaults (`cornerRadius 7`, `harmonicR 7`) this is `r = maxR`, so a corner between two 200 px legs gets a 100 px radius. That is the huge dome across the top of the 100% result and the blobby loops in the top-right of most patterns. Hairpins look right only because their short leg caps `maxR` at 7.
+
+4. **Arc geometry is only correct for 90° turns.** pathRenderer.ts:72-75 places the tangent points `r` along each leg and uses radius `r`. For a 45° deflection the tangent length should be `r·tan(22.5°)`, for 135° it should be `r·tan(67.5°)`. As written, 45° corners meet the legs with a visible kink and 135° corners get an SVG auto-scaled semicircle bulge.
+
+5. **Grid is anchored top-left, not centered.** occupancyGrid.ts:15-16 uses `floor(width / cell)` and starts at `boundary.x`, so the remainder (up to one full cell) all ends up as extra margin on the right and bottom. Every pattern sits visibly off-center in its boundary.
+
+6. **Ellipse export differs from the preview.** The canvas clips the strokes to the ellipse (Canvas.tsx:560); `buildSvgDocument` does not, so exported ellipse patterns bleed past the boundary by up to half a cell plus half a stroke.
+
+7. **Export units.** svgExport.ts:35 writes unitless `width`/`height`. LightBurn (96 dpi default) will read it at the intended size; Illustrator reads unitless px at 72 ppi and will show it 33% larger. Writing `width="135.5mm"` fixes both.
+
+8. **Gaps are quantised to whole segments.** pathRenderer.ts:116 subtracts entire segment lengths, so a requested 10–25 px gap removes a whole 200 px leg when it lands on a long one.
+
+9. **45° mode is bolted on.** Diagonal moves plus the no-corner-cutting rule starve the walker (mean 19%); the diagonal option is only ever used as a fallback, so the look is "90° pattern with occasional diagonal escapes".
+
+10. **Everything runs on the UI thread.** The 100% sweep already freezes the page for a second; a dense grid at 100% would freeze it for minutes (the first benchmark run of that case had to be killed after 10 minutes). `isMoveSafe` does a full flood fill per candidate per step, so cost is O(cells²) per walker, O(cells³) with Wicked Wise lookahead.
+
+Smaller code-quality notes: `handleWaypointMove` calls `setPaths` inside a `setWaypoints` updater (App.tsx:186,190), a side effect that runs twice under StrictMode; the "Reseeded to reach 13% fill" toast is misleading when the sweep fails; `Direction Bias (V / H)` of 0.30 actually means 70% vertical; `index.html` still has the Bolt OG image and the title "Guided Generative Vector Patterns"; no touch events; no persistence, so a reload loses everything.
+
+## Recommendations
+
+### A. Quick wins (an afternoon, no redesign)
+
+1. Default `ringHarmony` to 0, or cap `propR` at `cellSize / 2` so harmony only affects hairpins. Removes every giant arc.
+2. Fix the Wicked Wise early-exit (track a `moved` flag instead of comparing coordinates).
+3. Center the grid: `originX = boundary.x + (width - cols*cell) / 2`, same for y.
+4. Clip exported strokes to the ellipse (`<clipPath>` in the SVG) and write mm units on the root element.
+5. Tangent-correct arcs: `t = r * tan(θ/2)` where θ is the deflection angle.
+6. Replace the toast text with "Best coverage 13% after 80 attempts", and hide `Target Fill %` in modes where it does nothing.
+7. Wire up the unused `zoomToFit` (fit on boundary create, `0` shortcut), fix the lint error, drop the Bolt metadata, give the page a real title and favicon.
+
+### B. The real fix for fill: stop walking, start tracing
+
+Replace the greedy walker with a **spanning-tree Hamiltonian cycle**. Build a random spanning tree on a half-resolution grid (one node per 2×2 block of cells), then trace around the tree; the trace is a single closed loop that visits every fine cell exactly once, never crosses itself, and never traps. Properties that matter here:
+
+- 100% fill every time, for every seed, in O(cells). No retry sweep, no "couldn't fully fill" toast.
+- Character comes from how the tree is grown: Prim with weighted edges gives long straight runs (segment length), a horizontal/vertical weight gives direction bias, local weights give direction guides real teeth instead of only setting the initial heading, and perturbing weights per seed gives real variety without ever losing coverage.
+- Works on any mask (rectangle, ellipse, imported path) as long as the coarse grid is connected; odd leftover rows/cols are handled by the centering fix above or by allowing a single "spur" row.
+- Cut one edge of the loop to get an open path with two ends (today's look), or keep it closed for inlay channels and pendants, which is a new look the current engine cannot make.
+- 45° becomes a post-process: chamfer any corner whose two legs are at least one cell long. Full fill is preserved and the diagonal look is uniform instead of incidental.
+- Multi-Pass becomes "cut the loop into N pieces", which gives exact control over the number of paths and their lengths.
+
+Keep today's walker as a "Wander" mode for people who like the sparse, trailing look; the benchmark says that is what it produces.
+
+### C. Performance and robustness
+
+- Move generation into a Web Worker with a cancel button and a time budget; the UI never freezes and dense grids become usable.
+- Add vitest with the benchmark above as a regression test (fill ratio, arc radius bound, no self-intersection, every cell visited once).
+- Add undo/redo (waypoint drags and freezes are easy to lose) and autosave params + boundary to localStorage, plus a shareable URL encoding seed and params.
+
+### D. Features worth adding (ordered by value for laser and jewelry work)
+
+1. **Numeric boundary entry** in mm (width, height, corner radius) with presets (coaster 100 mm, pendant 40 mm, business card). Drag-to-draw is fine for sketching, useless for a part that has to fit.
+2. **Imported boundary**: drop an SVG path (the dormant Pen / `path` type) and rasterise it into the occupancy mask with point-in-polygon per cell. Same machinery gives a working Pen tool for free.
+3. **Export for cutting**: SVG in mm with boundary on its own layer/colour (LightBurn reads colours as layers), an "outline" export that offsets the stroke into a closed cut shape for inlays, and DXF.
+4. **Seed gallery**: generate 9 or 16 seeds as thumbnails and click one. For a generative tool this is the single biggest usability win.
+5. **Symmetry modes** (mirror X, mirror Y, 4-fold) for medallions and pendants, done by generating one quadrant and mirroring the tree.
+6. **Variable stroke**: two alternating widths, or width as a function of position, rendered as separate `<g>` groups so a laser can treat them as different power settings.
+7. **Closed-loop mode** (comes free with the Hamiltonian cycle) for channel inlay and continuous engraving without end caps.
+8. Direction guides that actually weight edges (see B), so an arrow visibly steers the flow in its neighbourhood.
+
+## Changes made 2026-11-02 (uncommitted, in the local clone)
+
+Quick wins A1 to A7 from above, plus two things found while doing them.
+
+- **Corner arcs** (`pathRenderer.ts`): tangent-correct for any deflection angle (`t = R·tan(θ/2)`), and Ring Harmony is now capped at one cell of radius. Max arc radius in the benchmark dropped from 247 px to 14 px. Default Ring Harmony is 0.5.
+- **Wicked Wise** (`wickedWiseWalker.ts`): fixed the always-true exit check. That exposed a second problem: its flood-fill "freedom" score was identical for every move that passed the connectivity check, so the mode was a byte-for-byte duplicate of Continuous. It now scores moves with Warnsdorff's rule (fewest onward options) blended 0.2/0.8 with the serpentine preference. Rect fill went from 15% to 46% mean; 45° mode now fills 100% on every seed as a concentric spiral; ellipses do not benefit (9%). It is a wall-hugging look now, distinct from Continuous.
+- **Grid centering** (`occupancyGrid.ts`): leftover space is split evenly on both sides; ellipse mask uses the same offset.
+- **SVG export** (`svgExport.ts`, new `units.ts`): root `width`/`height` in mm, strokes clipped to the boundary exactly like the preview.
+- **Rulers** (`Rulers.tsx`): ticks were only ever generated for world 0..width and went blank when panned; they now follow the pan offset. This was hiding behind the lint warning.
+- **UI**: "Target Fill %" is only shown for Multi-Pass; Continuous and Wicked Wise get a "Fill Completely" toggle (the only value that did anything). "Direction Bias (V / H)" is now "Horizontal Bias" (what it actually controls). Toast says "Best coverage N% after retries" instead of "Reseeded to reach N%". Fit-to-view button and `0` shortcut. Waypoint drag no longer sets state inside a state updater.
+- **Housekeeping**: title "Serpentine", inline SVG favicon, Bolt OG tags removed, lint clean, typecheck clean, build clean.
+
+Still open from the list: B (Hamiltonian engine), C (worker, tests, persistence), D (features). Continuous mode still self-traps (median 10%) by design of the walker; that is the engine rewrite.
+
+## Suggested order
+
+1. Quick wins A1–A7 (restores trust in the output immediately; ship to Netlify).
+2. Hamiltonian engine behind a new "Trace" fill mode, with tests; make it the default once it matches on look.
+3. Web Worker + seed gallery + numeric boundary.
+4. Export for cutting, imported boundaries, symmetry.

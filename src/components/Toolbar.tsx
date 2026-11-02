@@ -11,6 +11,7 @@ import {
   Lock,
   Compass,
   Trash2,
+  Maximize,
 } from 'lucide-react';
 import { ActiveTool } from '../types';
 import { colors, gradients } from '../theme';
@@ -27,6 +28,7 @@ interface ToolbarProps {
   onUnfreezeAll: () => void;
   guideCount: number;
   onClearGuides: () => void;
+  onFitView: () => void;
 }
 
 function ToolButton({
@@ -75,6 +77,7 @@ export function Toolbar({
   onUnfreezeAll,
   guideCount,
   onClearGuides,
+  onFitView,
 }: ToolbarProps) {
   return (
     <div
@@ -114,6 +117,10 @@ export function Toolbar({
           <Compass size={15} />
         </ToolButton>
       </div>
+
+      <ToolButton onClick={onFitView} title="Fit boundary to view (0)">
+        <Maximize size={15} />
+      </ToolButton>
 
       <Divider />
 
