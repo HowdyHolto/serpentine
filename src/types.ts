@@ -15,7 +15,7 @@ export interface BoundaryShape {
 export type TurnStyle = 'rounded' | 'squared';
 export type CapStyle = 'round' | 'butt';
 export type SegmentMode = 'fixed' | 'random';
-export type FillMode = 'continuous' | 'multi-pass' | 'wicked-wise';
+export type FillMode = 'trace' | 'continuous' | 'multi-pass' | 'wicked-wise';
 export type AngleMode = 90 | 45 | 30;
 export type ActiveTool = 'select' | 'rectangle' | 'ellipse' | 'pen' | 'redirect' | 'fill';
 export type ResizeEdge = 'top' | 'bottom' | 'left' | 'right';
@@ -44,6 +44,10 @@ export interface GenerationParams {
   maxGapLength: number;
   targetFillPercent: number;
   maxPasses: number;
+  /** Trace only: keep the Hamiltonian cycle closed (no end caps). */
+  closedLoop: boolean;
+  /** Trace only: cut the loop into this many open paths (1 = one path). */
+  tracePieces: number;
 }
 
 export interface Waypoint {
@@ -98,7 +102,7 @@ export const DEFAULT_PARAMS: GenerationParams = {
   turnStyle: 'rounded',
   capStyle: 'round',
   segmentMode: 'random',
-  fillMode: 'continuous',
+  fillMode: 'trace',
   fixedSegmentLength: 100,
   minSegmentLength: 30,
   maxSegmentLength: 200,
@@ -115,4 +119,6 @@ export const DEFAULT_PARAMS: GenerationParams = {
   maxGapLength: 25,
   targetFillPercent: 75,
   maxPasses: 10,
+  closedLoop: false,
+  tracePieces: 1,
 };

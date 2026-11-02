@@ -122,8 +122,10 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
 
         <SectionTitle title="Fill Modes" />
         <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>
-          <span style={{ color: colors.accent }}>Continuous</span> — single non-crossing line.{' '}
-          <span style={{ color: colors.accent }}>Multi-Pass</span> — multiple segments.
+          <span style={{ color: colors.accent }}>Trace</span> — grows a random tree over the boundary and traces around it: one non-crossing line that fills every cell on every seed. Closed Loop keeps it as a ring with no ends; Pieces cuts it into several paths.{' '}
+          <span style={{ color: colors.accent }}>Continuous</span> — a wandering walker, single line, sparse.{' '}
+          <span style={{ color: colors.accent }}>Multi-Pass</span> — several walker segments.{' '}
+          <span style={{ color: colors.accent }}>Wicked Wise</span> — wall-hugging walker.
         </div>
 
         <SectionTitle title="Direction Guides" />
@@ -134,7 +136,7 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
 
         <SectionTitle title="Angle Mode" />
         <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>
-          45° mode enables diagonal grid movement for varied patterns.
+          45° mode enables diagonal grid movement for varied patterns. In Trace it chamfers every corner instead, so fill stays complete.
         </div>
       </div>
     </div>

@@ -47,15 +47,22 @@ function ToggleGroup<T extends string>({
   options,
   value,
   onChange,
+  columns,
 }: {
   options: { label: string; value: T }[];
   value: T;
   onChange: (v: T) => void;
+  /** Lay the options out in a grid instead of one row. */
+  columns?: number;
 }) {
   return (
     <div
-      className="flex rounded-lg overflow-hidden p-0.5 gap-0.5"
-      style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${colors.borderLight}` }}
+      className={`${columns ? 'grid' : 'flex'} rounded-lg overflow-hidden p-0.5 gap-0.5`}
+      style={{
+        background: 'rgba(255,255,255,0.04)',
+        border: `1px solid ${colors.borderLight}`,
+        gridTemplateColumns: columns ? `repeat(${columns}, minmax(0, 1fr))` : undefined,
+      }}
     >
       {options.map((opt) => (
         <button
@@ -74,6 +81,38 @@ function ToggleGroup<T extends string>({
           {opt.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function Switch({
+  label,
+  checked,
+  onChange,
+  title,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  title?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <label className="text-[11px]" style={{ color: colors.textMuted }}>{label}</label>
+      <button
+        onClick={() => onChange(!checked)}
+        className="w-9 h-5 rounded-full relative transition-all duration-200"
+        title={title}
+        style={{
+          background: checked ? 'rgba(14,201,176,0.9)' : 'rgba(255,255,255,0.1)',
+          boxShadow: checked ? `0 0 8px ${colors.accentBorder}` : 'none',
+        }}
+      >
+        <span
+          className="absolute top-0.5 w-4 h-4 rounded-full transition-all duration-200"
+          style={{ background: '#fff', left: checked ? '18px' : '2px' }}
+        />
+      </button>
     </div>
   );
 }
@@ -243,7 +282,9 @@ export function ParameterPanel({
         <div>
           <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Fill Mode</label>
           <ToggleGroup
+            columns={2}
             options={[
+              { label: 'Trace', value: 'trace' as FillMode },
               { label: 'Continuous', value: 'continuous' as FillMode },
               { label: 'Multi-Pass', value: 'multi-pass' as FillMode },
               { label: 'Wicked Wise', value: 'wicked-wise' as FillMode },
@@ -252,7 +293,28 @@ export function ParameterPanel({
             onChange={(v) => update('fillMode', v)}
           />
         </div>
-        {params.fillMode === 'multi-pass' ? (
+        {params.fillMode === 'trace' ? (
+          <>
+            <Switch
+              label="Closed Loop"
+              checked={params.closedLoop}
+              onChange={(v) => update('closedLoop', v)}
+              title="Keep the path as one closed loop with no ends"
+            />
+            {!params.closedLoop && (
+              <SliderControl
+                label="Pieces"
+                value={params.tracePieces}
+                min={1}
+                max={30}
+                onChange={(v) => update('tracePieces', v)}
+              />
+            )}
+            <div className="text-[10px]" style={{ color: colors.textFaint }}>
+              Fills the whole boundary on every seed. Segment length, bias and guides shape the tree it traces.
+            </div>
+          </>
+        ) : params.fillMode === 'multi-pass' ? (
           <>
             <SliderControl
               label="Target Fill %"
@@ -271,23 +333,12 @@ export function ParameterPanel({
           </>
         ) : (
           <div>
-            <div className="flex items-center justify-between">
-              <label className="text-[11px]" style={{ color: colors.textMuted }}>Fill Completely</label>
-              <button
-                onClick={() => update('targetFillPercent', params.targetFillPercent >= 100 ? 75 : 100)}
-                className="w-9 h-5 rounded-full relative transition-all duration-200"
-                title="Retry with nearby seeds until the boundary is fully covered (slower)"
-                style={{
-                  background: params.targetFillPercent >= 100 ? 'rgba(14,201,176,0.9)' : 'rgba(255,255,255,0.1)',
-                  boxShadow: params.targetFillPercent >= 100 ? `0 0 8px ${colors.accentBorder}` : 'none',
-                }}
-              >
-                <span
-                  className="absolute top-0.5 w-4 h-4 rounded-full transition-all duration-200"
-                  style={{ background: '#fff', left: params.targetFillPercent >= 100 ? '18px' : '2px' }}
-                />
-              </button>
-            </div>
+            <Switch
+              label="Fill Completely"
+              checked={params.targetFillPercent >= 100}
+              onChange={(v) => update('targetFillPercent', v ? 100 : 75)}
+              title="Retry with nearby seeds until the boundary is fully covered (slower)"
+            />
             <div className="text-[10px] mt-1" style={{ color: colors.textFaint }}>
               Sweeps nearby seeds and keeps the best coverage. Slower.
             </div>
@@ -312,22 +363,11 @@ export function ParameterPanel({
       </PanelSection>
 
       <PanelSection title="Gaps" defaultOpen={false}>
-        <div className="flex items-center justify-between">
-          <label className="text-[11px]" style={{ color: colors.textMuted }}>Enable Gaps</label>
-          <button
-            onClick={() => update('gapsEnabled', !params.gapsEnabled)}
-            className="w-9 h-5 rounded-full relative transition-all duration-200"
-            style={{
-              background: params.gapsEnabled ? 'rgba(14,201,176,0.9)' : 'rgba(255,255,255,0.1)',
-              boxShadow: params.gapsEnabled ? `0 0 8px ${colors.accentBorder}` : 'none',
-            }}
-          >
-            <span
-              className="absolute top-0.5 w-4 h-4 rounded-full transition-all duration-200"
-              style={{ background: '#fff', left: params.gapsEnabled ? '18px' : '2px' }}
-            />
-          </button>
-        </div>
+        <Switch
+          label="Enable Gaps"
+          checked={params.gapsEnabled}
+          onChange={(v) => update('gapsEnabled', v)}
+        />
         {params.gapsEnabled && (
           <>
             <SliderControl label="Gap Freq Min" value={params.gapFrequencyMin} min={20} max={params.gapFrequencyMax} onChange={(v) => update('gapFrequencyMin', v)} />

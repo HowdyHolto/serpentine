@@ -12,6 +12,7 @@ import {
 import { OccupancyGrid } from './occupancyGrid';
 import { createSeededRandom, SeededRandom } from './random';
 import { wickedWiseContinuous } from './wickedWiseWalker';
+import { generateTrace } from './traceGenerator';
 
 export type DirectionBiasMap = Map<number, WalkDirection>;
 
@@ -546,7 +547,7 @@ function findFrontierCell(
   return best;
 }
 
-function extractWaypointsFromGrid(
+export function extractWaypointsFromGrid(
   gridPath: GridPoint[],
   grid: OccupancyGrid
 ): Waypoint[] {
@@ -584,7 +585,7 @@ function extractWaypointsFromGrid(
   return waypoints;
 }
 
-function extractWaypointsFromSegments(
+export function extractWaypointsFromSegments(
   gridSegments: GridPoint[][],
   grid: OccupancyGrid
 ): Waypoint[] {
@@ -692,6 +693,11 @@ function generateSerpentineOnce(
   params: GenerationParams,
   guides?: DirectionGuide[]
 ): { waypoints: Waypoint[]; structure: PathStructure; fillRatio: number } {
+  if (params.fillMode === 'trace') {
+    // Spanning-tree Hamiltonian cycle: always a full fill, no walker, no retry.
+    return generateTrace(boundary, params, guides);
+  }
+
   const rng = createSeededRandom(params.seed);
   const cellSize = params.strokeWidth + params.minGap;
   const grid = new OccupancyGrid(boundary, cellSize);

@@ -140,3 +140,25 @@ A fill mode where the path mimics the boundary (or an inner seed shape) as it wo
 2. Hamiltonian engine behind a new "Trace" fill mode, with tests; make it the default once it matches on look.
 3. Web Worker + seed gallery + numeric boundary.
 4. Export for cutting, imported boundaries, symmetry.
+
+## Trace engine (2026-11-02)
+
+Section B is implemented as a new fill mode, **Trace**, in `src/engine/traceGenerator.ts`, and it is now the default. The existing walker modes are unchanged.
+
+How it works: the occupancy grid is built with even dimensions (an odd leftover row or column is trimmed and the grid re-centered, so the pattern stays centered with up to half a cell of extra margin per side). Each 2×2 block of cells is a coarse node; a node exists only where all four cells are inside the mask, and only the largest connected component is used. A spanning tree is grown over the coarse nodes with a randomized Prim whose edge weights come from one pluggable function (`EdgeWeightFn`, context: both nodes, direction, straight-or-turn, run length vs target, distance from the mask edge, guide axis, RNG). The default weights make a straight continuation cheap until the run reaches the target segment length, tilt horizontal vs vertical by Horizontal Bias, and pull edges onto a direction guide's axis within its radius. The loop that hugs the tree at half a block is a Hamiltonian cycle of the fine grid; it is traced in one pass and cut at the cell nearest the bottom-left corner (or kept closed with the Closed Loop toggle). Pieces cuts it into N open paths at straight stretches. 45° is a chamfer of every corner by half a cell, so hairpins become chevrons and coverage is unchanged. The 100% retry sweep never runs for Trace.
+
+Measured (vitest benchmark in `src/engine/__tests__/trace.test.ts`, 512×538 rect, cell 14, 10 seeds):
+
+| Mode | Fill mean | Fill median | Fill min–max | Time (median / max) |
+|---|---|---|---|---|
+| Trace 90° | 100% | 100% | 100–100% | 0.8 ms / 2.7 ms |
+| Trace 45° | 100% | 100% | 100–100% | 0.3 ms / 0.7 ms |
+| Trace, ellipse 400×400 | 93% | 93% | 93–93% | 0.1 ms / 0.2 ms |
+| Continuous 90°, target 75 | 31% | 38% | 4–76% | 6.8 ms / 20 ms |
+| Wicked Wise 90°, target 75 | 41% | 57% | 5–78% | 20 ms / 23 ms |
+| Multi-Pass 90°, target 75 | 58% | 60% | 52–66% | 1.0 ms / 2.1 ms |
+| Continuous 90°, target 100 (sweep) | 96% | 100% | 73–100% | 604 ms / 764 ms |
+
+The ellipse's missing 7% is the ring of partial blocks along the edge, by construction (a coarse node needs all four cells inside). The 94 tests assert, for rect and ellipse at three cell sizes and seven seeds: every coverable cell visited exactly once, 4-connected closed cycle, no consecutive coincident waypoints, rect fill ratio exactly 1.0, closed loop joins mid-run, pieces cover every cell once, 45° legs are true diagonals, guides pull runs onto their axis, and no retry sweep for Trace.
+
+Known limits: frozen-waypoint regeneration still uses the walker to fill gaps (Trace does not yet respect frozen runs); a closed loop is rendered as a path whose first and last point coincide mid-run rather than an SVG `Z`, which is seamless with round caps and may show a hairline seam with flat caps on screen; editing the start waypoint of a closed loop opens it. A contour-parallel ("concentric") look can be added as another `EdgeWeightFn` that reads `fromDistance`/`toDistance`.

@@ -8,10 +8,24 @@ export class OccupancyGrid {
   public readonly originX: number;
   public readonly originY: number;
 
-  constructor(boundary: BoundaryShape, cellSize: number) {
+  constructor(
+    boundary: BoundaryShape,
+    cellSize: number,
+    options: { evenDimensions?: boolean } = {}
+  ) {
     this.cellSize = cellSize;
-    this.cols = Math.max(1, Math.floor(boundary.width / cellSize));
-    this.rows = Math.max(1, Math.floor(boundary.height / cellSize));
+    let cols = Math.max(1, Math.floor(boundary.width / cellSize));
+    let rows = Math.max(1, Math.floor(boundary.height / cellSize));
+    // The Trace engine works on 2x2 blocks of cells, so it asks for an even
+    // number of columns and rows. The odd leftover row/column is trimmed and
+    // the centering below re-splits the slack evenly, so the pattern stays
+    // centered with up to half a cell of extra margin on each side.
+    if (options.evenDimensions) {
+      cols -= cols % 2;
+      rows -= rows % 2;
+    }
+    this.cols = cols;
+    this.rows = rows;
     // Center the grid inside the boundary so the leftover fraction of a cell
     // is split evenly between both sides instead of piling up right/bottom.
     this.originX = boundary.x + (boundary.width - this.cols * cellSize) / 2;
