@@ -14,9 +14,11 @@
  *    gives long runs and hairpins;
  *  - horizontal vs vertical edges are weighted by `fillDirectionBias`;
  *  - direction guides make edges along their axis cheap within their radius;
- *  - Concentric adds a contour term: an edge along an iso-distance contour of
- *    the mask is cheap and one that crosses contours is expensive, scaled by a
- *    conformity gradient over normalized distance (see createConcentricEdgeWeight).
+ *  - Concentric adds a contour term over a scalar field (the distance
+ *    transform): an edge along an iso-line is cheap and one across the
+ *    gradient is expensive, scaled by a per-node conformity (a gradient over
+ *    depth). The field and conformity are pluggable (createFieldEdgeWeight),
+ *    so a heightmap or an image can drive the same rule.
  *
  * Masks: a coarse node exists only where all four of its fine cells are inside
  * the mask, so on an ellipse the ring of partial blocks along the edge is left
@@ -322,7 +324,11 @@ export interface EdgeContext {
   /** Length so far and target length (coarse steps) of the run ending at `from`. */
   runLength: number;
   runTarget: number;
-  /** Distance from the mask edge in coarse steps (see CoarseGrid.distance; 1 on the outer ring). */
+  /**
+   * Distance from the mask edge in coarse steps (see CoarseGrid.distance; 1 on
+   * the outer ring). Kept for weights that want it directly; the field
+   * weights read their own ScalarField instead.
+   */
   fromDistance: number;
   toDistance: number;
   /** Largest distance of any active node (the deepest ring); at least 1. */
@@ -336,8 +342,8 @@ export type EdgeWeightFn = (ctx: EdgeContext) => number;
 
 /**
  * The default weights: straight-within-target < turn < overshoot, tilted by
- * the horizontal/vertical bias and pulled along direction guides. The
- * concentric mode wraps this (createConcentricEdgeWeight).
+ * the horizontal/vertical bias and pulled along direction guides. Field
+ * weights (createFieldEdgeWeight, concentric) wrap this.
  */
 export function createDefaultEdgeWeight(params: GenerationParams): EdgeWeightFn {
   const horizontalBias = Math.min(1, Math.max(0, params.fillDirectionBias));
@@ -361,14 +367,118 @@ export function createDefaultEdgeWeight(params: GenerationParams): EdgeWeightFn 
 }
 
 /** The weight a parameter set asks for: concentric when enabled, else the default. */
-export function createEdgeWeight(params: GenerationParams): EdgeWeightFn {
-  return params.concentric ? createConcentricEdgeWeight(params) : createDefaultEdgeWeight(params);
+export function createEdgeWeight(params: GenerationParams, coarse: CoarseGrid): EdgeWeightFn {
+  return params.concentric ? createConcentricEdgeWeight(params, coarse) : createDefaultEdgeWeight(params);
 }
 
 /**
- * Conformity of a node at normalized depth `t` (0 on the outer ring, 1 at the
- * deepest node): 1 everywhere for falloff 0, falling linearly to 0 at the
- * center for falloff 1. Invert measures depth from the center instead.
+ * A scalar field over the coarse nodes: whatever a contour-following weight
+ * traces the iso-lines of. Concentric uses the distance transform; a terrain
+ * mode would use a heightmap and a photo mode a blurred image's luminance,
+ * each as another producer of this shape.
+ */
+export interface ScalarField {
+  /** Value per coarse node, indexed like CoarseGrid nodes; meaningless where inactive. */
+  value: Float64Array;
+  /** Central-difference gradient per node, in value per coarse step (0 where no active neighbour). */
+  gx: Float64Array;
+  gy: Float64Array;
+  /** Value range over active nodes. */
+  min: number;
+  max: number;
+  /** Change in value over one coarse step that counts as fully across the iso-lines. */
+  unit: number;
+}
+
+/** Build a ScalarField from a value per node: gradient by central differences over active nodes. */
+export function makeScalarField(coarse: CoarseGrid, value: Float64Array, unit: number): ScalarField {
+  const { cols, rows, active } = coarse;
+  const n = cols * rows;
+  const gx = new Float64Array(n);
+  const gy = new Float64Array(n);
+  let min = Infinity;
+  let max = -Infinity;
+  const diff = (k: number, kPrev: number, kNext: number, hasPrev: boolean, hasNext: boolean): number => {
+    if (hasPrev && hasNext) return (value[kNext] - value[kPrev]) / 2;
+    if (hasNext) return value[kNext] - value[k];
+    if (hasPrev) return value[k] - value[kPrev];
+    return 0;
+  };
+  for (let k = 0; k < n; k++) {
+    if (!active[k]) continue;
+    const C = k % cols;
+    const R = (k - C) / cols;
+    const l = C > 0 && active[k - 1] === 1;
+    const r = C < cols - 1 && active[k + 1] === 1;
+    const u = R > 0 && active[k - cols] === 1;
+    const d = R < rows - 1 && active[k + cols] === 1;
+    gx[k] = diff(k, k - 1, k + 1, l, r);
+    gy[k] = diff(k, k - cols, k + cols, u, d);
+    if (value[k] < min) min = value[k];
+    if (value[k] > max) max = value[k];
+  }
+  if (min === Infinity) {
+    min = 0;
+    max = 0;
+  }
+  return { value, gx, gy, min, max, unit: Math.max(1e-9, unit) };
+}
+
+/** The distance transform as a field: 1 on the outer ring, one unit per coarse step inward. */
+export function distanceField(coarse: CoarseGrid): ScalarField {
+  return makeScalarField(coarse, coarse.distance, 1);
+}
+
+/** Depth of a node in its field, 0 at the minimum and 1 at the maximum. */
+export function normalizedValue(field: ScalarField, node: number): number {
+  const span = field.max - field.min;
+  return span > 0 ? (field.value[node] - field.min) / span : 0;
+}
+
+export interface FieldWeightOptions {
+  /** 0..1: overall weight of the contour term (0 leaves the default weight untouched). */
+  strength: number;
+  /**
+   * 0..1 per node: how strongly the contour term applies around it. Concentric
+   * uses depth; terrain could use slope, a photo mode the distance to a band edge.
+   */
+  conformity: (node: number, field: ScalarField) => number;
+}
+
+/**
+ * Contour-following weights over any scalar field: the default weight plus a
+ * term that makes an edge along an iso-line (little change in value) cheaper
+ * and one across the gradient dearer, in proportion to the change in value
+ * over the edge measured in field units. The term is scaled by `strength`
+ * and by the mean conformity of the edge's two nodes, so straightness, bias
+ * and guides still shape the tree wherever conformity is low.
+ */
+export function createFieldEdgeWeight(
+  params: GenerationParams,
+  field: ScalarField,
+  opts: FieldWeightOptions
+): EdgeWeightFn {
+  const base = createDefaultEdgeWeight(params);
+  const strength = Math.min(1, Math.max(0, opts.strength));
+  const { conformity } = opts;
+
+  return (ctx) => {
+    let w = base(ctx);
+    if (strength <= 0) return w;
+    const c = (strength * (conformity(ctx.from, field) + conformity(ctx.to, field))) / 2;
+    if (c <= 0) return w;
+    // 0 for an edge along an iso-line, 1 for one straight across; on a curved
+    // contour the axis edge closest to the tangent scores lowest.
+    const crossing = Math.min(1, Math.abs(field.value[ctx.to] - field.value[ctx.from]) / field.unit);
+    w += CONTOUR_COST * c * (crossing - 0.5);
+    return w;
+  };
+}
+
+/**
+ * Conformity at normalized depth `t` (0 on the outer ring, 1 at the deepest
+ * node): 1 everywhere for falloff 0, falling linearly to 0 at the center for
+ * falloff 1. Invert measures depth from the center instead.
  */
 export function concentricConformity(t: number, falloff: number, invert: boolean): number {
   const depth = invert ? 1 - t : t;
@@ -376,31 +486,17 @@ export function concentricConformity(t: number, falloff: number, invert: boolean
 }
 
 /**
- * Contour-parallel ("concentric") weights: the default weight plus a term
- * that makes an edge running along an iso-distance contour (no change in
- * distance from the mask edge) cheaper and an edge that crosses contours
- * dearer, in proportion to how much the distance changes. The term is scaled by `concentricStrength` and by the
- * conformity at the edge's mean depth, so straightness, bias and guides still
- * shape the tree wherever conformity is low.
+ * Contour-parallel ("concentric") weights: the field weight over the
+ * distance transform, with conformity a gradient over depth set by
+ * `concentricStrength`, `concentricFalloff` and `concentricInvert`.
  */
-export function createConcentricEdgeWeight(params: GenerationParams): EdgeWeightFn {
-  const base = createDefaultEdgeWeight(params);
-  const strength = Math.min(1, Math.max(0, params.concentricStrength));
+export function createConcentricEdgeWeight(params: GenerationParams, coarse: CoarseGrid): EdgeWeightFn {
   const falloff = params.concentricFalloff;
   const invert = params.concentricInvert;
-
-  return (ctx) => {
-    let w = base(ctx);
-    if (strength <= 0) return w;
-    const span = Math.max(1, ctx.maxDistance - 1);
-    const t = ((ctx.fromDistance + ctx.toDistance) / 2 - 1) / span;
-    const c = strength * concentricConformity(t, falloff, invert);
-    // 0 for an edge along a contour, 1 for one straight across; on a curved
-    // boundary the axis edge closest to the tangent scores lowest.
-    const crossing = Math.min(1, Math.abs(ctx.toDistance - ctx.fromDistance));
-    w += CONTOUR_COST * c * (crossing - 0.5);
-    return w;
-  };
+  return createFieldEdgeWeight(params, distanceField(coarse), {
+    strength: params.concentricStrength,
+    conformity: (node, field) => concentricConformity(normalizedValue(field, node), falloff, invert),
+  });
 }
 
 /**
@@ -414,7 +510,7 @@ export function growSpanningTree(
   params: GenerationParams,
   rng: SeededRandom,
   biasMap?: DirectionBiasMap,
-  weight: EdgeWeightFn = createEdgeWeight(params)
+  weight: EdgeWeightFn = createEdgeWeight(params, coarse)
 ): void {
   const { cols, rows, active, edges, distance } = coarse;
   const n = cols * rows;
@@ -572,7 +668,7 @@ export function traceCycle(
 
   const rng = createSeededRandom(params.seed);
   const biasMap = guides && guides.length > 0 ? createDirectionBiasMap(guides, grid) : undefined;
-  growSpanningTree(coarse, grid, params, rng, biasMap, weight ?? createEdgeWeight(params));
+  growSpanningTree(coarse, grid, params, rng, biasMap, weight ?? createEdgeWeight(params, coarse));
 
   // Start at the fine cell nearest the bottom-left corner.
   const rootK = bottomLeftNode(coarse);

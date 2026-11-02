@@ -1,6 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { BoundaryShape, GenerationParams, DEFAULT_PARAMS } from '../../types';
-import { traceCycle, generateTrace, concentricConformity } from '../traceGenerator';
+import {
+  traceCycle,
+  generateTrace,
+  concentricConformity,
+  buildCoarseGrid,
+  createConcentricEdgeWeight,
+  createFieldEdgeWeight,
+  distanceField,
+  makeScalarField,
+} from '../traceGenerator';
+import { OccupancyGrid } from '../occupancyGrid';
 
 const RECT: BoundaryShape = { type: 'rectangle', x: 0, y: 0, width: 512, height: 538 };
 const ELLIPSE: BoundaryShape = { type: 'ellipse', x: 0, y: 0, width: 400, height: 400 };
@@ -168,6 +178,68 @@ describe('concentric trace', () => {
     const a = generateTrace(RECT, params({ seed: 3 }));
     const b = generateTrace(RECT, params({ seed: 3, concentricStrength: 1, concentricFalloff: 1 }));
     expect(b.waypoints).toEqual(a.waypoints);
+  });
+});
+
+describe('scalar field hook', () => {
+  it('a column ramp field pulls the tree onto vertical iso-lines', () => {
+    const p = params({ seed: 11, fillDirectionBias: 0.5 });
+    const cellSize = p.strokeWidth + p.minGap;
+    const grid = new OccupancyGrid(RECT, cellSize, { evenDimensions: true });
+    const coarse = buildCoarseGrid(grid);
+    const ramp = new Float64Array(coarse.cols * coarse.rows);
+    for (let k = 0; k < ramp.length; k++) ramp[k] = k % coarse.cols;
+    const field = makeScalarField(coarse, ramp, 1);
+    expect(field.min).toBe(0);
+    expect(field.max).toBe(coarse.cols - 1);
+    // Gradient is +1 in x and 0 in y everywhere inside the rect.
+    const mid = Math.floor(coarse.rows / 2) * coarse.cols + Math.floor(coarse.cols / 2);
+    expect(field.gx[mid]).toBeCloseTo(1);
+    expect(field.gy[mid]).toBeCloseTo(0);
+
+    const weight = createFieldEdgeWeight(p, field, { strength: 1, conformity: () => 1 });
+    const r = generateTrace(RECT, p, [], weight);
+    expect(r.fillRatio).toBe(1);
+    let v = 0;
+    let h = 0;
+    for (let i = 1; i < r.waypoints.length; i++) {
+      const dx = Math.abs(r.waypoints[i].x - r.waypoints[i - 1].x);
+      const dy = Math.abs(r.waypoints[i].y - r.waypoints[i - 1].y);
+      if (dy > dx) v += dy;
+      else h += dx;
+    }
+    const plain = generateTrace(RECT, p, []);
+    let pv = 0;
+    let ph = 0;
+    for (let i = 1; i < plain.waypoints.length; i++) {
+      const dx = Math.abs(plain.waypoints[i].x - plain.waypoints[i - 1].x);
+      const dy = Math.abs(plain.waypoints[i].y - plain.waypoints[i - 1].y);
+      if (dy > dx) pv += dy;
+      else ph += dx;
+    }
+    expect(v / (v + h)).toBeGreaterThan(pv / (pv + ph) + 0.2);
+    expect(v / (v + h)).toBeGreaterThan(0.85);
+  });
+
+  it('concentric is the field weight over the distance field', () => {
+    for (const seed of SEEDS.slice(0, 3)) {
+      const p = concentric({ seed, concentricFalloff: 0.7 });
+      const cellSize = p.strokeWidth + p.minGap;
+      const grid = new OccupancyGrid(ELLIPSE, cellSize, { evenDimensions: true });
+      const coarse = buildCoarseGrid(grid);
+      const field = distanceField(coarse);
+      expect(field.min).toBe(1);
+      expect(field.unit).toBe(1);
+      const viaField = createFieldEdgeWeight(p, field, {
+        strength: p.concentricStrength,
+        conformity: (node, f) => concentricConformity((f.value[node] - f.min) / (f.max - f.min), p.concentricFalloff, false),
+      });
+      const a = generateTrace(ELLIPSE, p, [], viaField);
+      const b = generateTrace(ELLIPSE, p, [], createConcentricEdgeWeight(p, coarse));
+      const c = generateTrace(ELLIPSE, p);
+      expect(a.waypoints).toEqual(b.waypoints);
+      expect(a.waypoints).toEqual(c.waypoints);
+    }
   });
 });
 
