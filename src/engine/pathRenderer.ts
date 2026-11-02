@@ -21,20 +21,31 @@ function splitAtSegmentBoundaries(waypoints: Waypoint[]): Waypoint[][] {
   return subPaths;
 }
 
+function isClosedRun(waypoints: Waypoint[]): boolean {
+  if (waypoints.length < 4) return false;
+  const a = waypoints[0];
+  const b = waypoints[waypoints.length - 1];
+  return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+}
+
 function waypointsToSvgPath(
   waypoints: Waypoint[],
   cornerRadius: number,
   isRounded: boolean,
-  radiusFor: (wp: Waypoint) => number | undefined
+  radiusFor: (wp: Waypoint) => number | undefined,
+  closed: boolean
 ): string {
   if (waypoints.length < 2) return '';
+  // A closed loop (Trace "Closed Loop") arrives with first == last mid-run.
+  // Emit it with Z so flat caps show no seam at the joint.
+  const tail = closed ? ' Z' : '';
 
   if (!isRounded) {
     let d = `M ${waypoints[0].x} ${waypoints[0].y}`;
     for (let i = 1; i < waypoints.length; i++) {
       d += ` L ${waypoints[i].x} ${waypoints[i].y}`;
     }
-    return d;
+    return d + tail;
   }
 
   let d = `M ${waypoints[0].x} ${waypoints[0].y}`;
@@ -104,7 +115,7 @@ function waypointsToSvgPath(
     }
   }
 
-  return d;
+  return d + tail;
 }
 
 
@@ -362,7 +373,8 @@ export function renderPaths(
     const runs = splitWithGaps(subPath, params);
 
     for (const run of runs) {
-      const path = waypointsToSvgPath(run, params.cornerRadius, isRounded, radiusFor);
+      const closed = !params.gapsEnabled && runs.length === 1 && isClosedRun(run);
+      const path = waypointsToSvgPath(run, params.cornerRadius, isRounded, radiusFor, closed);
       if (path) {
         results.push({ d: path, strokeWidth: params.strokeWidth });
       }
