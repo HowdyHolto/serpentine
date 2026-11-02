@@ -1,5 +1,6 @@
 import { BoundaryShape, GenerationParams, RenderedPath } from '../types';
 import { pxToMm } from './units';
+import { boundaryShapeElement } from './geometry';
 
 const fmt = (n: number) => Number(n.toFixed(3)).toString();
 
@@ -14,10 +15,7 @@ export function buildSvgDocument(
   const vw = boundary.width + pad * 2;
   const vh = boundary.height + pad * 2;
 
-  const shapeEl =
-    boundary.type === 'ellipse'
-      ? `<ellipse cx="${boundary.x + boundary.width / 2}" cy="${boundary.y + boundary.height / 2}" rx="${boundary.width / 2}" ry="${boundary.height / 2}"`
-      : `<rect x="${boundary.x}" y="${boundary.y}" width="${boundary.width}" height="${boundary.height}"`;
+  const shapeEl = boundaryShapeElement(boundary);
   const boundaryEl = `${shapeEl} fill="none" stroke="#999" stroke-width="0.5" />`;
   // Clip strokes exactly like the on-screen preview does, so an ellipse
   // export does not bleed past its boundary.

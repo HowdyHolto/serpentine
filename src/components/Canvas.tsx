@@ -14,6 +14,7 @@ import {
 } from '../types';
 import { getGroupIndices } from '../engine/constraintSolver';
 import { Rulers, RULER_SIZE, PX_PER_MM } from './Rulers';
+import { makePolygonBoundary, polygonPathData } from '../engine/geometry';
 import { HelpPanel } from './HelpPanel';
 import { colors } from '../theme';
 
@@ -69,6 +70,7 @@ function hitTestResizeEdge(
   worldPos: Point,
   hitSize: number
 ): ResizeEdge | null {
+  if (boundary.type === 'path') return null;
   const { x, y, width, height } = boundary;
   const midX = x + width / 2;
   const midY = y + height / 2;
@@ -151,6 +153,27 @@ export function Canvas({
   const [marqueeStart, setMarqueeStart] = useState<Point | null>(null);
   const [marqueeEnd, setMarqueeEnd] = useState<Point | null>(null);
   const [ghostGuidePos, setGhostGuidePos] = useState<Point | null>(null);
+  const [penPoints, setPenPoints] = useState<Point[]>([]);
+  const [penCursor, setPenCursor] = useState<Point | null>(null);
+  const penPointsRef = useRef<Point[]>([]);
+  penPointsRef.current = penPoints;
+  const onBoundaryCreateRef = useRef(onBoundaryCreate);
+  onBoundaryCreateRef.current = onBoundaryCreate;
+
+  const closePen = useCallback(() => {
+    const pts = penPointsRef.current;
+    if (pts.length >= 3) onBoundaryCreateRef.current(makePolygonBoundary(pts));
+    setPenPoints([]);
+    setPenCursor(null);
+  }, []);
+
+  // Leaving the pen tool drops an unfinished polygon.
+  useEffect(() => {
+    if (activeTool !== 'pen') {
+      setPenPoints([]);
+      setPenCursor(null);
+    }
+  }, [activeTool]);
 
   const activeGroup = useMemo(() => {
     const idx = draggingWpIndex ?? hoveredWpIndex;
@@ -189,6 +212,15 @@ export function Canvas({
         setSpaceDown(true);
       }
       if (e.key === 'Shift') setShiftDown(true);
+      if ((e.target as HTMLElement).matches('input, textarea')) return;
+      if (e.key === 'Enter' && penPointsRef.current.length >= 3) {
+        e.preventDefault();
+        closePen();
+      }
+      if (e.key === 'Escape' && penPointsRef.current.length > 0) {
+        setPenPoints([]);
+        setPenCursor(null);
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -203,7 +235,7 @@ export function Canvas({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, []);
+  }, [closePen]);
 
   const getWorldPos = useCallback(
     (e: React.MouseEvent): Point | null => {
@@ -248,7 +280,21 @@ export function Canvas({
         return;
       }
 
-      if (activeTool === 'select' && boundary) {
+      if (activeTool === 'pen') {
+        const world = getWorldPos(e);
+        if (world) {
+          const pts = penPointsRef.current;
+          const closeRadius = 12 / transform.scale;
+          if (pts.length >= 3 && Math.hypot(world.x - pts[0].x, world.y - pts[0].y) <= closeRadius) {
+            closePen();
+          } else {
+            setPenPoints([...pts, world]);
+          }
+        }
+        return;
+      }
+
+      if (activeTool === 'select' && boundary && boundary.type !== 'path') {
         const world = getWorldPos(e);
         if (world) {
           const hitSize = 10 / transform.scale;
@@ -291,12 +337,13 @@ export function Canvas({
         }
       }
     },
-    [activeTool, getWorldPos, onPanStart, spaceDown, showWaypoints, hoveredWpIndex, boundary, transform.scale, waypoints, onToggleFreezeWaypoint, guides, onGuideAdd, onGuideCycle, onGuideRemove]
+    [activeTool, getWorldPos, onPanStart, spaceDown, showWaypoints, hoveredWpIndex, boundary, transform.scale, waypoints, onToggleFreezeWaypoint, guides, onGuideAdd, onGuideCycle, onGuideRemove, closePen]
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       const world = getWorldPos(e);
+      if (activeTool === 'pen') setPenCursor(world);
 
       if (marqueeStart) {
         if (world) setMarqueeEnd(world);
@@ -505,6 +552,9 @@ export function Canvas({
         }}
         onWheel={onWheel}
         onMouseDown={handleMouseDown}
+        onDoubleClick={() => {
+          if (activeTool === 'pen' && penPointsRef.current.length >= 3) closePen();
+        }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => {
@@ -528,6 +578,11 @@ export function Canvas({
               />
             </clipPath>
           )}
+          {boundary && boundary.type === 'path' && boundary.pathData && (
+            <clipPath id="boundary-clip">
+              <path d={boundary.pathData} />
+            </clipPath>
+          )}
           {boundary && boundary.type === 'rectangle' && (
             <clipPath id="boundary-clip">
               <rect
@@ -547,6 +602,15 @@ export function Canvas({
               y={boundary.y}
               width={boundary.width}
               height={boundary.height}
+              fill="none"
+              stroke={colors.boundaryStroke}
+              strokeWidth={1 / transform.scale}
+              strokeDasharray={`${4 / transform.scale} ${3 / transform.scale}`}
+            />
+          )}
+          {!cleanView && boundary && boundary.type === 'path' && boundary.pathData && (
+            <path
+              d={boundary.pathData}
               fill="none"
               stroke={colors.boundaryStroke}
               strokeWidth={1 / transform.scale}
@@ -584,7 +648,7 @@ export function Canvas({
             <BoundaryDimensions boundary={boundary} scale={transform.scale} />
           )}
 
-          {!cleanView && boundary && activeTool === 'select' && (
+          {!cleanView && boundary && boundary.type !== 'path' && activeTool === 'select' && (
             <ResizeHandles
               boundary={boundary}
               handleSize={resizeHandleSize}
@@ -741,6 +805,39 @@ export function Canvas({
               strokeDasharray={`${5 / transform.scale} ${3 / transform.scale}`}
             />
           )}
+          {activeTool === 'pen' && penPoints.length > 0 && (
+            <g style={{ pointerEvents: 'none' }}>
+              <path
+                d={polygonPathData(penPoints).replace(/ Z$/, '')}
+                fill="none"
+                stroke={colors.previewStroke}
+                strokeWidth={1.5 / transform.scale}
+              />
+              {penCursor && (
+                <line
+                  x1={penPoints[penPoints.length - 1].x}
+                  y1={penPoints[penPoints.length - 1].y}
+                  x2={penCursor.x}
+                  y2={penCursor.y}
+                  stroke={colors.previewStroke}
+                  strokeWidth={1 / transform.scale}
+                  strokeDasharray={`${5 / transform.scale} ${3 / transform.scale}`}
+                  opacity={0.7}
+                />
+              )}
+              {penPoints.map((p, i) => (
+                <circle
+                  key={i}
+                  cx={p.x}
+                  cy={p.y}
+                  r={(i === 0 && penPoints.length >= 3 ? 6 : 3.5) / transform.scale}
+                  fill={i === 0 && penPoints.length >= 3 ? colors.accentBgActive : colors.previewStroke}
+                  stroke={colors.previewStroke}
+                  strokeWidth={1.5 / transform.scale}
+                />
+              ))}
+            </g>
+          )}
           {drawPreview && activeTool === 'ellipse' && (
             <ellipse
               cx={previewX + previewW / 2}
@@ -755,7 +852,7 @@ export function Canvas({
           )}
         </g>
 
-        {!boundary && !drawPreview && (
+        {!boundary && !drawPreview && penPoints.length === 0 && (
           <text
             x="50%"
             y="50%"
@@ -765,7 +862,7 @@ export function Canvas({
             fontSize="13"
             fontFamily="ui-sans-serif, system-ui, sans-serif"
           >
-            Draw a rectangle or ellipse to define the fill boundary
+            Draw a rectangle or ellipse, or click points with the pen (P), to define the fill boundary
           </text>
         )}
       </svg>

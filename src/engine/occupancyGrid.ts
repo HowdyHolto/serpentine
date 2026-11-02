@@ -1,4 +1,5 @@
 import { BoundaryShape, Point } from '../types';
+import { pointInPolygon } from './geometry';
 
 export class OccupancyGrid {
   private grid: boolean[][];
@@ -39,6 +40,19 @@ export class OccupancyGrid {
   }
 
   private markOutOfBounds(boundary: BoundaryShape) {
+    if (boundary.type === 'path' && boundary.points && boundary.points.length >= 3) {
+      const pts = boundary.points;
+      for (let row = 0; row < this.rows; row++) {
+        for (let col = 0; col < this.cols; col++) {
+          const x = this.originX + (col + 0.5) * this.cellSize;
+          const y = this.originY + (row + 0.5) * this.cellSize;
+          if (!pointInPolygon(x, y, pts)) {
+            this.grid[row][col] = true;
+          }
+        }
+      }
+      return;
+    }
     if (boundary.type === 'ellipse') {
       const cx = boundary.x + boundary.width / 2;
       const cy = boundary.y + boundary.height / 2;

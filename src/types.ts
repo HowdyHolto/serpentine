@@ -5,11 +5,15 @@ export interface Point {
 
 export interface BoundaryShape {
   type: 'rectangle' | 'ellipse' | 'path';
+  /** Bounding box (for 'path', of the polygon). */
   x: number;
   y: number;
   width: number;
   height: number;
+  /** 'path' only: the closed polygon's SVG path, used for outlines and clipping. */
   pathData?: string;
+  /** 'path' only: the polygon's vertices, used for the fill mask. */
+  points?: Point[];
 }
 
 export type TurnStyle = 'rounded' | 'squared';

@@ -44,7 +44,9 @@ function Thumbnail({ item }: { item: Arrangement }) {
       className="shrink-0 rounded-md"
       style={{ background: colors.canvasBg, border: `1px solid ${colors.borderLight}` }}
     >
-      {b.type === 'ellipse' ? (
+      {b.type === 'path' && b.pathData ? (
+        <path d={b.pathData} fill="none" stroke={colors.boundaryStroke} strokeWidth={Math.max(b.width, b.height) / 120} />
+      ) : b.type === 'ellipse' ? (
         <ellipse cx={b.x + b.width / 2} cy={b.y + b.height / 2} rx={b.width / 2} ry={b.height / 2} fill="none" stroke={colors.boundaryStroke} strokeWidth={Math.max(b.width, b.height) / 120} />
       ) : (
         <rect x={b.x} y={b.y} width={b.width} height={b.height} fill="none" stroke={colors.boundaryStroke} strokeWidth={Math.max(b.width, b.height) / 120} />
