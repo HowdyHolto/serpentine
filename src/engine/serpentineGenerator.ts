@@ -16,6 +16,7 @@ import { createSeededRandom, SeededRandom } from './random';
 import { wickedWiseContinuous } from './wickedWiseWalker';
 import { generateTrace } from './traceGenerator';
 import { applyJitter } from './jitter';
+import { generateRake } from './rake';
 
 export type DirectionBiasMap = Map<number, WalkDirection>;
 
@@ -697,6 +698,9 @@ function generateSerpentineOnce(
   guides?: DirectionGuide[],
   rocks?: Rock[]
 ): { waypoints: Waypoint[]; structure: PathStructure; fillRatio: number } {
+  if (params.patternMode === 'rake') {
+    return generateRake(boundary, params, rocks ?? []);
+  }
   if (usesTrace(params)) {
     // Spanning-tree Hamiltonian cycle: always a full fill, no walker, no retry.
     return generateTrace(boundary, params, guides, undefined, rocks);

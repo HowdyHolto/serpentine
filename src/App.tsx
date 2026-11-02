@@ -136,7 +136,7 @@ export default function App() {
     if (!boundary) return;
     const fi = frozenIndicesRef.current;
     const fp = frozenParamsRef.current;
-    if (fi.size > 0 && fp) {
+    if (fi.size > 0 && fp && fp.patternMode !== 'rake') {
       const result = partialRegenerate(boundary, fp, waypointsRef.current, fi, guidesRef.current);
       setWaypoints(result.waypoints);
       setStructure(result.structure);
@@ -264,7 +264,7 @@ export default function App() {
     setFrozenParams(null);
   }, []);
 
-  const rocksMatter = params.patternMode === 'contour' && params.contourSource !== 'noise';
+  const rocksMatter = (params.patternMode === 'contour' || params.patternMode === 'rake') && params.contourSource !== 'noise';
   const generateRef = useRef(generate);
   generateRef.current = generate;
   useEffect(() => {
@@ -503,7 +503,7 @@ export default function App() {
           onPanMove={handlePanMove}
           onPanEnd={handlePanEnd}
           screenToWorld={screenToWorld}
-          showWaypoints={showWaypoints}
+          showWaypoints={showWaypoints && params.patternMode !== 'rake'}
           cleanView={cleanView}
           onWaypointMove={handleWaypointMove}
           structure={structure}

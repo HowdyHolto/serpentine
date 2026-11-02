@@ -22,10 +22,12 @@ export type SegmentMode = 'fixed' | 'random';
 /**
  * What the pattern is: a free Serpentine fill, a Concentric fill that follows
  * the boundary's offset contours, or a Contour fill that follows the
- * iso-lines of a terrain-like height field. Concentric and Contour always run
- * on the Trace engine; Serpentine runs on `fillMode`.
+ * iso-lines of a terrain-like height field, or a Rake that draws those
+ * iso-lines as separate lines (a raked garden, a topographic map). Concentric
+ * and Contour always run on the Trace engine; Serpentine runs on `fillMode`;
+ * Rake is its own engine.
  */
-export type PatternMode = 'serpentine' | 'concentric' | 'contour';
+export type PatternMode = 'serpentine' | 'concentric' | 'contour' | 'rake';
 /** The engine behind a Serpentine pattern. Trace is the default; the rest are the legacy walkers. */
 export type FillMode = 'trace' | 'continuous' | 'multi-pass' | 'wicked-wise';
 export type AngleMode = 90 | 45 | 30;
@@ -84,6 +86,10 @@ export interface GenerationParams {
   rockEdge: number;
   /** Pond, 0..1: how much of the noise terrain to blend under the rocks. */
   contourNoiseMix: number;
+  /** Rake, -1..1: 0 uniform width; positive thins the low lines, negative thins the high ones. */
+  rakeWidthVariation: number;
+  /** Rake: drop lines shorter than this many cells (strays left where lines crowd at a junction). */
+  rakeMinLength: number;
   /**
    * 0..1: nudge every anchor with smooth seeded noise so lines lean and
    * wobble organically. Capped below half the gap, so lines never touch.
@@ -93,6 +99,7 @@ export interface GenerationParams {
 
 /** True when the pattern runs on the Trace engine (every mode but a legacy Serpentine engine). */
 export function usesTrace(params: GenerationParams): boolean {
+  if (params.patternMode === 'rake') return false;
   return params.patternMode !== 'serpentine' || params.fillMode === 'trace';
 }
 
@@ -100,6 +107,8 @@ export interface Waypoint {
   x: number;
   y: number;
   type: 'start' | 'turn' | 'end' | 'segment-start';
+  /** Rake: on a line's 'start' point, its level 0..1 (lowest to highest), for width variation. */
+  level?: number;
 }
 
 export interface GridPoint {
@@ -191,4 +200,6 @@ export const DEFAULT_PARAMS: GenerationParams = {
   rockSpread: 150,
   rockEdge: 0.5,
   contourNoiseMix: 0,
+  rakeWidthVariation: 0,
+  rakeMinLength: 3,
 };

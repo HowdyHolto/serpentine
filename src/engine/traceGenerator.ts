@@ -73,6 +73,8 @@ const GUIDE_COST = 0.7;
 // Full-strength contour term: crossing minus along must beat turn + overshoot
 // + jitter (2.1) so a faithful ring is never left for a straighter run.
 const CONTOUR_COST = 2.5;
+/** Extra cost of a node between contour lines versus one on a line, scaled by conformity. */
+const BAND_COST = 2.0;
 
 interface HeapEdge {
   w: number;
@@ -464,6 +466,14 @@ export interface FieldWeightOptions {
    * fully; what a terrain wants.
    */
   measure?: 'value' | 'direction';
+  /**
+   * Also prefer nodes that sit on discrete contour lines, one line per coarse
+   * step along the gradient. On a 4-connected grid a curved contour is only
+   * followable as a staircase; the direction term alone ties at 45° and
+   * straightness then wins, so rings break into axis-aligned quadrants. The
+   * band term makes the staircase nodes cheaper, so rings stay rings.
+   */
+  bands?: boolean;
 }
 
 /**
@@ -483,12 +493,25 @@ export function createFieldEdgeWeight(
   const strength = Math.min(1, Math.max(0, opts.strength));
   const { conformity } = opts;
   const measure = opts.measure ?? 'value';
+  // 0 on a contour line's centre, 1 midway between two lines. Lines sit at
+  // multiples of field.unit, the mean change per coarse step, so on average
+  // one line per ring; they bunch on steep ground and spread on flat.
+  let band: Float64Array | null = null;
+  if (opts.bands) {
+    const n = field.value.length;
+    band = new Float64Array(n).fill(0.5);
+    for (let k = 0; k < n; k++) {
+      const t = field.value[k] / field.unit;
+      band[k] = 2 * Math.abs(t - Math.floor(t) - 0.5);
+    }
+  }
 
   return (ctx) => {
     let w = base(ctx);
     if (strength <= 0) return w;
     const c = (strength * (conformity(ctx.from, field) + conformity(ctx.to, field))) / 2;
     if (c <= 0) return w;
+    if (band) w += BAND_COST * c * (band[ctx.to] - 0.5);
     // 0 for an edge along an iso-line, 1 for one straight across; on a curved
     // contour the axis edge closest to the tangent scores lowest.
     let crossing: number;
@@ -633,6 +656,7 @@ export function contourField(
   // garden
   const blockPx = 2 * cellSize;
   const edgeWeight = Math.min(1, Math.max(0, params.rockEdge));
+  const edgeOffset = (1 - edgeWeight) * Math.max(cols, coarse.rows) * blockPx * 0.5;
   return heightField(coarse, (cx, cy) => {
     const k = cy * cols + cx;
     const { x, y } = world(k);
@@ -642,7 +666,7 @@ export function contourField(
       if (d < v) v = d;
     }
     if (edgeWeight > 0) {
-      const dEdge = (coarse.distance[k] * blockPx) / edgeWeight;
+      const dEdge = coarse.distance[k] * blockPx + edgeOffset;
       if (dEdge < v) v = dEdge;
     }
     return v === Infinity ? 0 : v;
@@ -669,6 +693,7 @@ export function createContourEdgeWeight(
     strength: params.contourStrength,
     conformity: (node) => contourConformity(slope(node), response, invert),
     measure: 'direction',
+    bands: true,
   });
 }
 

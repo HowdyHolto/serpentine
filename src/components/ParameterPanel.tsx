@@ -124,7 +124,8 @@ function Switch({
 const MODE_HINTS: Record<PatternMode, string> = {
   serpentine: 'Free random fill: one non-crossing line that covers every cell on every seed.',
   concentric: "Follows the boundary's offset contours as it works inward, hairpinning between rings.",
-  contour: 'Follows the iso-lines of a seeded terrain, like a topographic map. The seed reshapes the terrain.',
+  contour: 'One line follows the iso-lines of a terrain, like a topographic map. The seed reshapes the terrain.',
+  rake: 'Draws the terrain\'s iso-lines as separate rake lines, like a zen garden or a topographic map. Lines never cross.',
 };
 
 function Disclosure({
@@ -175,6 +176,7 @@ export function ParameterPanel({
   };
 
   const cellSize = params.strokeWidth + params.minGap;
+  const terrain = params.patternMode === 'contour' || params.patternMode === 'rake';
 
   return (
     <div
@@ -209,7 +211,9 @@ export function ParameterPanel({
             { label: 'Serpentine', value: 'serpentine' as PatternMode },
             { label: 'Concentric', value: 'concentric' as PatternMode },
             { label: 'Contour', value: 'contour' as PatternMode },
+            { label: 'Rake', value: 'rake' as PatternMode },
           ]}
+          columns={2}
           value={params.patternMode}
           onChange={(v) => update('patternMode', v)}
         />
@@ -247,7 +251,7 @@ export function ParameterPanel({
           </>
         )}
 
-        {params.patternMode === 'contour' && (
+        {terrain && (
           <>
             <div>
               <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Terrain</label>
@@ -266,14 +270,35 @@ export function ParameterPanel({
                 {params.contourSource === 'garden' && 'Rake lines radiate from each rock (K) and the edge until they meet along ridges.'}
               </div>
             </div>
-            <SliderControl
-              label="Strength"
-              value={params.contourStrength}
-              min={0}
-              max={1}
-              step={0.05}
-              onChange={(v) => update('contourStrength', v)}
-            />
+            {params.patternMode === 'contour' && (
+              <SliderControl
+                label="Strength"
+                value={params.contourStrength}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={(v) => update('contourStrength', v)}
+              />
+            )}
+            {params.patternMode === 'rake' && (
+              <>
+                <SliderControl
+                  label="Width Variation"
+                  value={params.rakeWidthVariation}
+                  min={-1}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => update('rakeWidthVariation', v)}
+                />
+                <SliderControl
+                  label="Min Length (cells)"
+                  value={params.rakeMinLength}
+                  min={1}
+                  max={20}
+                  onChange={(v) => update('rakeMinLength', v)}
+                />
+              </>
+            )}
             {(params.contourSource === 'noise' || params.contourNoiseMix > 0) && (
               <SliderControl
                 label="Feature Size"
@@ -347,23 +372,32 @@ export function ParameterPanel({
                 )}
               </div>
             )}
-            <SliderControl
-              label="Slope Response"
-              value={params.contourSlope}
-              min={0}
-              max={1}
-              step={0.05}
-              onChange={(v) => update('contourSlope', v)}
-            />
-            <Switch
-              label="Invert"
-              checked={params.contourInvert}
-              onChange={(v) => update('contourInvert', v)}
-              title="Faithful on flat ground instead of steep"
-            />
-            <div className="text-[10px]" style={{ color: colors.textFaint }}>
-              Slope Response 0 follows the terrain everywhere; 1 is faithful on steep ground and loose on flat.
-            </div>
+            {params.patternMode === 'contour' && (
+              <>
+                <SliderControl
+                  label="Slope Response"
+                  value={params.contourSlope}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => update('contourSlope', v)}
+                />
+                <Switch
+                  label="Invert"
+                  checked={params.contourInvert}
+                  onChange={(v) => update('contourInvert', v)}
+                  title="Faithful on flat ground instead of steep"
+                />
+                <div className="text-[10px]" style={{ color: colors.textFaint }}>
+                  Slope Response 0 follows the terrain everywhere; 1 is faithful on steep ground and loose on flat.
+                </div>
+              </>
+            )}
+            {params.patternMode === 'rake' && (
+              <div className="text-[10px]" style={{ color: colors.textFaint }}>
+                Garden spaces lines exactly one gap apart. Pond and Noise space them by slope, so steep ground gets dense lines; widen the gap if they crowd.
+              </div>
+            )}
           </>
         )}
 
@@ -496,6 +530,7 @@ export function ParameterPanel({
         </div>
       </PanelSection>
 
+      {params.patternMode !== 'rake' && (
       <PanelSection title="Segments">
         <div>
           <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Mode</label>
@@ -535,6 +570,7 @@ export function ParameterPanel({
           </>
         )}
       </PanelSection>
+      )}
 
       <PanelSection title="Path">
         {usesTrace(params) && (
@@ -556,22 +592,26 @@ export function ParameterPanel({
             )}
           </>
         )}
-        <SliderControl
-          label="Horizontal Bias"
-          value={params.fillDirectionBias}
-          min={0}
-          max={1}
-          step={0.05}
-          onChange={(v) => update('fillDirectionBias', v)}
-        />
-        <SliderControl
-          label="Direction Switch Freq"
-          value={params.directionSwitchFrequency}
-          min={0}
-          max={0.5}
-          step={0.01}
-          onChange={(v) => update('directionSwitchFrequency', v)}
-        />
+        {params.patternMode !== 'rake' && (
+          <>
+            <SliderControl
+              label="Horizontal Bias"
+              value={params.fillDirectionBias}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => update('fillDirectionBias', v)}
+            />
+            <SliderControl
+              label="Direction Switch Freq"
+              value={params.directionSwitchFrequency}
+              min={0}
+              max={0.5}
+              step={0.01}
+              onChange={(v) => update('directionSwitchFrequency', v)}
+            />
+          </>
+        )}
         <SliderControl
           label="Jitter"
           value={params.jitter}
