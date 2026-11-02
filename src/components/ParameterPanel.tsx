@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
-import { GenerationParams, TurnStyle, CapStyle, SegmentMode, FillMode, AngleMode, PatternMode, ContourSource, Rock, usesTrace } from '../types';
+import { GenerationParams, TurnStyle, CapStyle, SegmentMode, FillMode, AngleMode, PatternMode, ContourSource, Rock, usesTrace, PathStyle, GradientScope, MarkerShape, MarkerMode } from '../types';
 import { SliderControl } from './SliderControl';
 import { colors, gradients } from '../theme';
 
@@ -121,6 +121,46 @@ function Switch({
   );
 }
 
+function ColorInput({
+  label,
+  value,
+  onChange,
+  onRemove,
+}: {
+  label: string;
+  value: string;
+  onChange: (hex: string) => void;
+  /** Shown as a small × when the stop can be removed. */
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <label className="text-[11px]" style={{ color: colors.textMuted }}>{label}</label>
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-mono" style={{ color: colors.textDim }}>{value}</span>
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-7 h-5 rounded-md cursor-pointer bg-transparent"
+          style={{ border: `1px solid ${colors.borderInput}`, padding: 0 }}
+          title={label}
+        />
+        {onRemove && (
+          <button
+            onClick={onRemove}
+            className="text-[11px] leading-none px-1 rounded"
+            style={{ color: colors.textDim }}
+            title="Remove this stop"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const MODE_HINTS: Record<PatternMode, string> = {
   serpentine: 'Free random fill: one non-crossing line that covers every cell on every seed.',
   concentric: "Follows the boundary's offset contours as it works inward, hairpinning between rings.",
@@ -177,6 +217,16 @@ export function ParameterPanel({
 
   const cellSize = params.strokeWidth + params.minGap;
   const terrain = params.patternMode === 'contour' || params.patternMode === 'rake';
+  const style = params.style;
+  const updateStyle = <K extends keyof PathStyle>(key: K, value: PathStyle[K]) => {
+    onChange({ ...params, style: { ...style, [key]: value } });
+  };
+  const setStop = (i: number, hex: string) => {
+    const stops = style.gradientStops.slice();
+    stops[i] = hex;
+    updateStyle('gradientStops', stops);
+  };
+  const stopLabels = style.gradientStops.length === 3 ? ['Start', 'Middle', 'End'] : ['Start', 'End'];
 
   return (
     <div
@@ -471,6 +521,121 @@ export function ParameterPanel({
             onChange={(v) => update('capStyle', v)}
           />
         </div>
+      </PanelSection>
+
+      <PanelSection title="Style" defaultOpen={false}>
+        <Switch
+          label="Length Gradient"
+          checked={style.gradientEnabled}
+          onChange={(v) => updateStyle('gradientEnabled', v)}
+          title="Colour the line with a gradient that follows its length"
+        />
+        {style.gradientEnabled && (
+          <>
+            {style.gradientStops.map((hex, i) => (
+              <ColorInput
+                key={i}
+                label={stopLabels[i] ?? `Stop ${i + 1}`}
+                value={hex}
+                onChange={(h) => setStop(i, h)}
+                onRemove={style.gradientStops.length === 3 && i === 1 ? () => updateStyle('gradientStops', [style.gradientStops[0], style.gradientStops[2]]) : undefined}
+              />
+            ))}
+            {style.gradientStops.length < 3 && (
+              <button
+                onClick={() => updateStyle('gradientStops', [style.gradientStops[0], '#ffd166', style.gradientStops[1]])}
+                className="text-[11px] w-full py-1 rounded-md transition-colors"
+                style={{ color: colors.textDim, border: `1px dashed ${colors.borderInput}` }}
+              >
+                + Middle stop
+              </button>
+            )}
+            <div>
+              <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Scope</label>
+              <ToggleGroup
+                options={[
+                  { label: 'Per Run', value: 'per-run' as GradientScope },
+                  { label: 'Whole', value: 'whole' as GradientScope },
+                ]}
+                value={style.gradientScope}
+                onChange={(v) => updateStyle('gradientScope', v)}
+              />
+              <p className="text-[10px] mt-1.5 leading-snug" style={{ color: colors.textFaint }}>
+                Per Run restarts the gradient on every piece, pass or rake line; Whole runs it once across them all.
+              </p>
+            </div>
+            <SliderControl
+              label="Repeats"
+              value={style.gradientCycles}
+              min={1}
+              max={12}
+              onChange={(v) => updateStyle('gradientCycles', v)}
+            />
+          </>
+        )}
+        <Switch
+          label="Markers"
+          checked={style.markersEnabled}
+          onChange={(v) => updateStyle('markersEnabled', v)}
+          title="Place shapes along the path"
+        />
+        {style.markersEnabled && (
+          <>
+            <ToggleGroup
+              options={[
+                { label: 'Dot', value: 'dot' as MarkerShape },
+                { label: 'Square', value: 'square' as MarkerShape },
+                { label: 'Dash', value: 'dash' as MarkerShape },
+                { label: 'Triangle', value: 'triangle' as MarkerShape },
+              ]}
+              value={style.markerShape}
+              onChange={(v) => updateStyle('markerShape', v)}
+              columns={2}
+            />
+            <SliderControl
+              label="Spacing (px)"
+              value={style.markerSpacing}
+              min={2}
+              max={200}
+              onChange={(v) => updateStyle('markerSpacing', v)}
+            />
+            <SliderControl
+              label="Size (× stroke)"
+              value={style.markerSize}
+              min={0.1}
+              max={4}
+              step={0.05}
+              onChange={(v) => updateStyle('markerSize', v)}
+            />
+            <SliderControl
+              label="Skew (°)"
+              value={style.markerSkew}
+              min={-90}
+              max={90}
+              onChange={(v) => updateStyle('markerSkew', v)}
+            />
+            <Switch
+              label="Follow Gradient Colour"
+              checked={style.markerColor === 'gradient'}
+              onChange={(v) => updateStyle('markerColor', v ? 'gradient' : (style.gradientStops[0] ?? '#ffffff'))}
+              title="Take each marker's colour from the gradient stops at its position"
+            />
+            {style.markerColor !== 'gradient' && (
+              <ColorInput label="Colour" value={style.markerColor} onChange={(h) => updateStyle('markerColor', h)} />
+            )}
+            <div>
+              <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Stroke</label>
+              <ToggleGroup
+                options={[
+                  { label: 'Overlay', value: 'overlay' as MarkerMode },
+                  { label: 'Replace', value: 'replace' as MarkerMode },
+                ]}
+                value={style.markerMode}
+                onChange={(v) => updateStyle('markerMode', v)}
+              />
+            </div>
+          </>
+        )}
       </PanelSection>
 
       <PanelSection title="Turns">

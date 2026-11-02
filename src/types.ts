@@ -37,6 +37,41 @@ export type ContourSource = 'noise' | 'pond' | 'garden';
 export type ResizeEdge = 'top' | 'bottom' | 'left' | 'right';
 export type WalkDirection = 'up' | 'down' | 'left' | 'right' | 'up-right' | 'up-left' | 'down-right' | 'down-left';
 
+/** Whether a length gradient spans the whole design or restarts on every run (piece, pass, rake line). */
+export type GradientScope = 'whole' | 'per-run';
+export type MarkerShape = 'dot' | 'square' | 'dash' | 'triangle';
+/** Whether the stroke still draws under the markers. */
+export type MarkerMode = 'overlay' | 'replace';
+/** A marker colour: a hex string, or 'gradient' to take the gradient colour at the marker's position. */
+export type MarkerColor = string;
+
+/**
+ * How the generated lines are coloured and decorated along their length.
+ * Pure rendering: nothing here changes the geometry, so style edits never
+ * regenerate and apply even to a frozen path.
+ */
+export interface PathStyle {
+  /** Colour the stroke with a gradient that follows the line's arc length. */
+  gradientEnabled: boolean;
+  /** Two or three hex colour stops, evenly spaced along the length. */
+  gradientStops: string[];
+  gradientScope: GradientScope;
+  /** How many times the gradient runs along the length (mirrored, so it never jumps). 1 = once. */
+  gradientCycles: number;
+  /** Place shapes along the path. */
+  markersEnabled: boolean;
+  markerShape: MarkerShape;
+  /** Distance between markers along the path, in px (adjusted so markers fit a run evenly). */
+  markerSpacing: number;
+  /** Marker size as a fraction of the stroke width (dot diameter, square side, dash length, triangle height). */
+  markerSize: number;
+  /** Hex colour, or 'gradient' to follow the gradient stops along the path. */
+  markerColor: MarkerColor;
+  /** Rotation in degrees relative to the path tangent. */
+  markerSkew: number;
+  markerMode: MarkerMode;
+}
+
 export interface GenerationParams {
   strokeWidth: number;
   minGap: number;
@@ -95,6 +130,7 @@ export interface GenerationParams {
    * wobble organically. Capped below half the gap, so lines never touch.
    */
   jitter: number;
+  style: PathStyle;
 }
 
 /** True when the pattern runs on the Trace engine (every mode but a legacy Serpentine engine). */
@@ -143,6 +179,21 @@ export interface PathStructure {
 export interface RenderedPath {
   d: string;
   strokeWidth: number;
+  /** Stroke colour as a hex string; absent means the renderer's default (white on screen, black in the export). */
+  stroke?: string;
+  /** Index of the run (sub-path, pass or rake line) this path belongs to; gap pieces share a run. */
+  run?: number;
+}
+
+/** A shape placed on the path by the Style layer, at `x, y`, rotated `angle` degrees (tangent plus skew). */
+export interface RenderedMarker {
+  shape: MarkerShape;
+  x: number;
+  y: number;
+  angle: number;
+  /** Size in px (dot diameter, square side, dash length, triangle height). */
+  size: number;
+  color: string;
 }
 
 /**
@@ -161,6 +212,20 @@ export interface DirectionGuide {
   y: number;
   direction: WalkDirection;
 }
+
+export const DEFAULT_STYLE: PathStyle = {
+  gradientEnabled: false,
+  gradientStops: ['#ff4d8d', '#ffd166', '#2ec4ff'],
+  gradientScope: 'per-run',
+  gradientCycles: 1,
+  markersEnabled: false,
+  markerShape: 'dot',
+  markerSpacing: 24,
+  markerSize: 1,
+  markerColor: 'gradient',
+  markerSkew: 0,
+  markerMode: 'overlay',
+};
 
 export const DEFAULT_PARAMS: GenerationParams = {
   strokeWidth: 8,
@@ -202,4 +267,5 @@ export const DEFAULT_PARAMS: GenerationParams = {
   contourNoiseMix: 0,
   rakeWidthVariation: 0,
   rakeMinLength: 3,
+  style: DEFAULT_STYLE,
 };

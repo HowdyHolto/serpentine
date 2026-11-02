@@ -56,7 +56,7 @@ function Thumbnail({ item }: { item: Arrangement }) {
           key={i}
           points={pts}
           fill="none"
-          stroke={colors.pathStroke}
+          stroke={item.params.style?.gradientEnabled ? item.params.style.gradientStops[Math.floor(item.params.style.gradientStops.length / 2)] : colors.pathStroke}
           strokeWidth={item.params.strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"

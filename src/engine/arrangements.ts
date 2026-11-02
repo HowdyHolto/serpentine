@@ -113,7 +113,12 @@ export function normaliseArrangement(raw: unknown): Arrangement {
     name: typeof a.name === 'string' && a.name.trim() ? a.name.trim() : 'Imported arrangement',
     savedAt: typeof a.savedAt === 'string' ? a.savedAt : new Date().toISOString(),
     boundary: b as BoundaryShape,
-    params: { ...DEFAULT_PARAMS, ...(a.params as Partial<GenerationParams>) },
+    params: {
+      ...DEFAULT_PARAMS,
+      ...(a.params as Partial<GenerationParams>),
+      // Saves from before the Style layer have no `style`; later ones may lack new keys.
+      style: { ...DEFAULT_PARAMS.style, ...((a.params as Partial<GenerationParams>).style ?? {}) },
+    },
     guides,
     rocks,
     waypoints,

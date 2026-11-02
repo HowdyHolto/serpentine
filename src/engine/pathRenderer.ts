@@ -369,6 +369,7 @@ function splitWithGaps(
  */
 function renderRakePaths(waypoints: Waypoint[], params: GenerationParams): RenderedPath[] {
   const results: RenderedPath[] = [];
+  let runIdx = 0;
   const v = Math.max(-1, Math.min(1, params.rakeWidthVariation));
   const fmt = (n: number) => Number(n.toFixed(2));
   let run: Waypoint[] = [];
@@ -381,7 +382,7 @@ function renderRakePaths(waypoints: Waypoint[], params: GenerationParams): Rende
       const t = first.level ?? 0.5;
       const thin = v > 0 ? 1 - t : t;
       const factor = 1 - Math.abs(v) * thin * 0.8;
-      results.push({ d, strokeWidth: fmt(params.strokeWidth * factor) });
+      results.push({ d, strokeWidth: fmt(params.strokeWidth * factor), run: runIdx++ });
     }
     run = [];
   };
@@ -406,17 +407,18 @@ export function renderPaths(
   const radii = isRounded ? solveCornerRadii(subPaths, params) : new Map<Waypoint, number>();
   const radiusFor = (wp: Waypoint) => radii.get(wp);
 
-  for (const subPath of subPaths) {
+  subPaths.forEach((subPath, runIdx) => {
     const runs = splitWithGaps(subPath, params);
 
     for (const run of runs) {
       const closed = !params.gapsEnabled && runs.length === 1 && isClosedRun(run);
       const path = waypointsToSvgPath(run, params.cornerRadius, isRounded, radiusFor, closed);
       if (path) {
-        results.push({ d: path, strokeWidth: params.strokeWidth });
+        // `run` ties gap pieces of one sub-path (pass, piece) together for per-run styling.
+        results.push({ d: path, strokeWidth: params.strokeWidth, run: runIdx });
       }
     }
-  }
+  });
 
   return results;
 }

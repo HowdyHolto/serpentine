@@ -1,13 +1,38 @@
-import { BoundaryShape, GenerationParams, RenderedPath } from '../types';
+import { BoundaryShape, GenerationParams, RenderedMarker, RenderedPath } from '../types';
 import { pxToMm } from './units';
 import { boundaryShapeElement } from './geometry';
+import { markerGeometry, markerTransform, strokesVisible } from './pathStyle';
 
 const fmt = (n: number) => Number(n.toFixed(3)).toString();
 
+/** Default stroke colour for paths that carry none: black for cutting and engraving. */
+const EXPORT_STROKE = '#000000';
+
+function markerElement(m: RenderedMarker): string {
+  const g = markerGeometry(m);
+  const t = markerTransform(m);
+  switch (g.kind) {
+    case 'circle':
+      return `<circle cx="${m.x}" cy="${m.y}" r="${g.r}" fill="${m.color}" />`;
+    case 'rect':
+      return `<rect x="${g.x}" y="${g.y}" width="${g.width}" height="${g.height}" fill="${m.color}" transform="${t}" />`;
+    case 'line':
+      return `<line x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}" stroke="${m.color}" stroke-width="${g.strokeWidth}" stroke-linecap="round" transform="${t}" />`;
+    case 'polygon':
+      return `<polygon points="${g.points}" fill="${m.color}" transform="${t}" />`;
+  }
+}
+
+/**
+ * Write the rendered paths (and the Style layer's markers) to an SVG in mm.
+ * Paths are grouped by stroke width and colour; markers get their own group.
+ * When the style says markers replace the stroke, the paths are left out.
+ */
 export function buildSvgDocument(
   boundary: BoundaryShape,
   paths: RenderedPath[],
-  params: GenerationParams
+  params: GenerationParams,
+  markers: RenderedMarker[] = []
 ): string {
   const pad = 20;
   const vx = boundary.x - pad;
@@ -21,18 +46,26 @@ export function buildSvgDocument(
   // export does not bleed past its boundary.
   const clipEl = `${shapeEl} />`;
 
-  const strokeGroups = new Map<number, string[]>();
-  for (const p of paths) {
-    if (!strokeGroups.has(p.strokeWidth)) {
-      strokeGroups.set(p.strokeWidth, []);
+  const strokeGroups = new Map<string, { sw: number; stroke: string; els: string[] }>();
+  const drawStrokes = strokesVisible(params.style);
+  for (const p of drawStrokes ? paths : []) {
+    const stroke = p.stroke ?? EXPORT_STROKE;
+    const key = `${p.strokeWidth}|${stroke}`;
+    if (!strokeGroups.has(key)) {
+      strokeGroups.set(key, { sw: p.strokeWidth, stroke, els: [] });
     }
-    strokeGroups.get(p.strokeWidth)!.push(`    <path d="${p.d}" />`);
+    strokeGroups.get(key)!.els.push(`    <path d="${p.d}" />`);
   }
 
   let pathGroupsEl = '';
-  for (const [sw, pathEls] of strokeGroups) {
-    pathGroupsEl += `  <g fill="none" stroke="#000000" stroke-width="${sw}" stroke-linecap="${params.capStyle}" stroke-linejoin="round" clip-path="url(#boundary-clip)">\n`;
-    pathGroupsEl += pathEls.join('\n') + '\n';
+  for (const { sw, stroke, els } of strokeGroups.values()) {
+    pathGroupsEl += `  <g fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${params.capStyle}" stroke-linejoin="round" clip-path="url(#boundary-clip)">\n`;
+    pathGroupsEl += els.join('\n') + '\n';
+    pathGroupsEl += `  </g>\n`;
+  }
+  if (markers.length > 0) {
+    pathGroupsEl += `  <g id="markers" clip-path="url(#boundary-clip)">\n`;
+    pathGroupsEl += markers.map((m) => `    ${markerElement(m)}`).join('\n') + '\n';
     pathGroupsEl += `  </g>\n`;
   }
 

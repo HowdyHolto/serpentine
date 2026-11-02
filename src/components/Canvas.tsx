@@ -8,6 +8,7 @@ import {
   CanvasTransform,
   PathStructure,
   RenderedPath,
+  RenderedMarker,
   ResizeEdge,
   DirectionGuide,
   Rock,
@@ -18,10 +19,16 @@ import { Rulers, RULER_SIZE, PX_PER_MM } from './Rulers';
 import { makePolygonBoundary, polygonPathData } from '../engine/geometry';
 import { HelpPanel } from './HelpPanel';
 import { colors } from '../theme';
+import { markerGeometry, markerTransform } from '../engine/pathStyle';
 
 interface CanvasProps {
   boundary: BoundaryShape | null;
+  /** Stroke paths to draw (already styled: gradient pieces carry a `stroke`). */
   paths: RenderedPath[];
+  /** Shapes placed along the paths by the Style layer. */
+  markers?: RenderedMarker[];
+  /** False when markers replace the stroke. */
+  strokesVisible?: boolean;
   waypoints: Waypoint[];
   params: GenerationParams;
   activeTool: ActiveTool;
@@ -54,6 +61,21 @@ interface CanvasProps {
   onGuideCycle: (index: number) => void;
   onGuideRemove: (index: number) => void;
   onCanvasSize?: (width: number, height: number) => void;
+}
+
+function MarkerShape({ marker }: { marker: RenderedMarker }) {
+  const g = markerGeometry(marker);
+  const transform = markerTransform(marker);
+  switch (g.kind) {
+    case 'circle':
+      return <circle cx={marker.x} cy={marker.y} r={g.r} fill={marker.color} />;
+    case 'rect':
+      return <rect x={g.x} y={g.y} width={g.width} height={g.height} fill={marker.color} transform={transform} />;
+    case 'line':
+      return <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke={marker.color} strokeWidth={g.strokeWidth} strokeLinecap="round" transform={transform} />;
+    case 'polygon':
+      return <polygon points={g.points} fill={marker.color} transform={transform} />;
+  }
 }
 
 function hitTestWaypoints(
@@ -132,6 +154,8 @@ export function Canvas({
   screenToWorld,
   showWaypoints,
   cleanView,
+  markers = [],
+  strokesVisible = true,
   onWaypointMove,
   structure,
   showHelp,
@@ -672,16 +696,19 @@ export function Canvas({
           )}
 
           <g clipPath={boundary ? 'url(#boundary-clip)' : undefined}>
-            {paths.map((p, i) => (
+            {strokesVisible && paths.map((p, i) => (
               <path
                 key={i}
                 d={p.d}
                 fill="none"
-                stroke={colors.pathStroke}
+                stroke={p.stroke ?? colors.pathStroke}
                 strokeWidth={p.strokeWidth}
                 strokeLinecap={params.capStyle}
                 strokeLinejoin="round"
               />
+            ))}
+            {markers.map((m, i) => (
+              <MarkerShape key={i} marker={m} />
             ))}
           </g>
 

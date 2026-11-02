@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   BoundaryShape,
   GenerationParams,
@@ -16,6 +16,7 @@ import {
 import { generateSerpentine } from './engine/serpentineGenerator';
 import { partialRegenerate } from './engine/partialRegenerate';
 import { renderPaths } from './engine/pathRenderer';
+import { applyPathStyle } from './engine/pathStyle';
 import { resolveConstrainedMove } from './engine/constraintSolver';
 import { buildSvgDocument, downloadSvg } from './engine/svgExport';
 import { Toolbar } from './components/Toolbar';
@@ -167,11 +168,24 @@ export default function App() {
     []
   );
 
+  // Regenerate when a parameter that shapes the geometry changes. `style` is
+  // rendering only, so a colour or marker edit never regenerates.
+  const generateRef = useRef(generate);
+  generateRef.current = generate;
+  const geometryKey = useMemo(() => {
+    const { style: _style, ...geometry } = params;
+    void _style;
+    return JSON.stringify(geometry);
+  }, [params]);
   useEffect(() => {
     if (!boundary) return;
     if (frozenIndices.size > 0) return;
-    generate();
-  }, [boundary, generate, frozenIndices.size]);
+    generateRef.current();
+  }, [boundary, geometryKey, frozenIndices.size]);
+
+  // The Style layer runs on the rendered geometry with the live style, so it
+  // applies even while the path is frozen.
+  const styled = useMemo(() => applyPathStyle(paths, params), [paths, params]);
 
   useEffect(() => {
     if (frozenIndices.size > 0 && !frozenParams) {
@@ -183,10 +197,10 @@ export default function App() {
 
   const handleExport = useCallback(() => {
     if (!boundary || paths.length === 0) return;
-    const exportParams = frozenParams || params;
-    const svg = buildSvgDocument(boundary, paths, exportParams);
+    const exportParams = { ...(frozenParams || params), style: params.style };
+    const svg = buildSvgDocument(boundary, styled.paths, exportParams, styled.markers);
     downloadSvg(svg, exportParams.seed);
-  }, [boundary, paths, params, frozenParams]);
+  }, [boundary, paths.length, styled, params, frozenParams]);
 
   const handleRandomizeSeed = useCallback(() => {
     const fp = frozenParamsRef.current;
@@ -265,8 +279,6 @@ export default function App() {
   }, []);
 
   const rocksMatter = (params.patternMode === 'contour' || params.patternMode === 'rake') && params.contourSource !== 'noise';
-  const generateRef = useRef(generate);
-  generateRef.current = generate;
   useEffect(() => {
     if (rocksMatter && boundary && frozenIndicesRef.current.size === 0) generateRef.current();
   }, [rocks, rocksMatter, boundary]);
@@ -491,7 +503,9 @@ export default function App() {
         />
         <Canvas
           boundary={boundary}
-          paths={paths}
+          paths={styled.paths}
+          markers={styled.markers}
+          strokesVisible={styled.strokesVisible}
           waypoints={waypoints}
           params={params}
           activeTool={activeTool}
