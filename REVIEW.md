@@ -136,6 +136,30 @@ A fill mode where the path mimics the boundary (or an inner seed shape) as it wo
 
 Field hook (built with Concentric, 2026-11-02): the contour rule is not tied to the distance transform. `ScalarField` in `traceGenerator.ts` is a value per coarse node plus a central-difference gradient (`gx`, `gy`), its range and a `unit` (the change per coarse step that counts as fully across). `makeScalarField(coarse, values, unit)` builds one from any values; `distanceField(coarse)` is the producer Concentric uses. `createFieldEdgeWeight(params, field, { strength, conformity })` is the generic weight: edges along the field's iso-lines are cheap, edges across its gradient dear, scaled by a per-node `conformity(node, field)` callback. Concentric is that weight over the distance field with conformity = a gradient over normalized depth. A terrain mode is a `heightField(sampler)` with conformity from slope (`hypot(gx, gy)`); a photo mode is an `imageField(imageData, blur, bands)` with conformity from band-edge proximity, and `field.value` bands can also drive Pieces and stroke colour downstream. `EdgeContext.fromDistance/toDistance` stay as they were for weights that want them; the field weights do not use them.
 
+## Pattern modes (2026-11-02)
+
+The panel now leads with a **Mode** control: **Serpentine**, **Concentric**, **Contour**. `GenerationParams.patternMode` picks it; the old `fillMode` is now the engine behind a Serpentine pattern only (Trace by default; Continuous, Multi-Pass and Wicked Wise live under an "Engine" disclosure inside the Serpentine mode, kept for their sparser look). Concentric and Contour always run on Trace, so `usesTrace(params)` in `types.ts` is the one check for "is this the Trace engine" and the generator, the App toast logic and the panel all use it. `createEdgeWeight` in `traceGenerator.ts` switches on the mode. The shared sections (Stroke, Turns, Spacing, Segments, Path, Gaps, Seed) never move when the mode changes; Path holds Closed Loop and Pieces (Trace-only) plus Horizontal Bias and Direction Switch Freq, which shape every mode wherever the contour term is weak.
+
+**Contour** is the terrain mode Holt described: the line follows the iso-lines of a seeded height field like a topographic map, with slope deciding how faithful it is. It is `createContourEdgeWeight`: `createFieldEdgeWeight` over `heightField(coarse, noise)`, where `noise` is 3-octave seeded value noise (`src/engine/noise.ts`) with features `contourScale` px apart, and conformity is `contourConformity(slope, contourSlope, contourInvert)` with slope normalised to the steepest active node. The field weight got a `measure` option: Concentric keeps `'value'` (change in distance over the edge), Contour uses `'direction'` (cosine between the edge and the field gradient), because with `'value'` gentle ground barely steered and the result was a patchwork of axis-aligned domains only on the steep parts; with `'direction'` every slope steers fully and the pattern shows coherent swirl domains and nested rings around each hill. Changing the seed reshapes the terrain.
+
+Parameters (Mode section, Contour): **Strength** (0..1, default 0.8; 0 reproduces Serpentine exactly), **Feature Size** (40..600 px, default 160: how far apart the hills are), **Slope Response** (0..1, default 0.6: 0 follows the terrain everywhere, 1 is faithful on steep ground and loose on flat), **Invert** (faithful on flat ground instead).
+
+Measured (`src/engine/__tests__/contour.test.ts`, 7 seeds, cell 14 unless noted): mean over steps between coarse blocks of 1 − |cos| between the step and the terrain gradient, so 1 along a contour and 0 straight up a slope.
+
+| Setting | Rect 512×538 | Ellipse 400 |
+|---|---|---|
+| Serpentine | 37% | 36% |
+| Contour, strength 1, slope 0 | 61% | 58% |
+| Contour default (0.8 / 0.6) | 57% | 55% |
+| Contour, strength 1, slope 1 | 53% | 52% |
+| Contour, strength 1, slope 1, invert | 58% | 55% |
+| Contour, feature size 60 | 60% | 58% |
+| Contour, strength 1, cell 6, feature 300 | 61% | 60% |
+
+The 16 contour tests cover the noise (deterministic per seed, 0..1, smooth), the conformity curve, the margin over Serpentine (≥ 0.15 on the rect, ≥ 0.1 on the ellipse, floor 0.55), strength 0 equal to Serpentine, the mode dispatch, and the full Trace invariants for four settings × 5 seeds × both shapes. 126 tests in all.
+
+Known limits: the same 4-connected ceiling as Concentric on a curve (a contour at 45° is a staircase, so scores top out near 60%); at the default cell (14 px) a 480 px boundary only fits one or two hills, so the terrain reads as a few large domains until the stroke and gap shrink or the feature size drops; the frozen-waypoint regeneration still uses the old walker for every mode. Follow-ups: an image field (`imageField(imageData, blur, bands)`, with bands driving Pieces and stroke colour) is the photo mashup, and an inner seed shape for Concentric is a distance field measured from the seed; both are new `ScalarField` producers, no engine change.
+
 ## Suggested order
 
 1. Quick wins A1–A7 (restores trust in the output immediately; ship to Netlify).
@@ -167,11 +191,11 @@ Known limits: frozen-waypoint regeneration still uses the walker to fill gaps (T
 
 ## Concentric (2026-11-02, later)
 
-D9 is implemented as a **Concentric** toggle inside the Trace fill mode (`createConcentricEdgeWeight` in `src/engine/traceGenerator.ts`). It is an edge-weighting rule on the same spanning tree, so every Trace guarantee (100% fill, one non-crossing line, Closed Loop, Pieces, 45°) still holds, and `pathRenderer.ts` is untouched.
+D9 is implemented as the **Concentric** pattern mode (originally a toggle inside Trace) (`createConcentricEdgeWeight` in `src/engine/traceGenerator.ts`). It is an edge-weighting rule on the same spanning tree, so every Trace guarantee (100% fill, one non-crossing line, Closed Loop, Pieces, 45°) still holds, and `pathRenderer.ts` is untouched.
 
 How it works: `CoarseGrid.distance` is now an exact Euclidean distance transform over the coarse nodes (1 on the outer ring, then 1 + the distance to the nearest ring node; on a rectangle this is the same as the old 4-neighbour BFS, on a curve the contours are smooth offsets instead of diamonds). The concentric weight wraps the default weight and adds `CONTOUR_COST × strength × conformity × (crossing − 0.5)`, where `crossing` is how much the distance changes along the edge (0 along a contour, 1 straight across; on a curve the axis edge nearest the tangent scores lowest). `CONTOUR_COST` (2.5) beats turn + overshoot + jitter, so at full conformity Prim consumes a whole ring before it crosses to the next one. The tree becomes nested C-shaped rings joined by single radial edges, and the loop that hugs it reads as offset rings with a hairpin where each ring breaks. The straightness, Horizontal Bias and guide terms are still there, so segment length and H/V bias shape the result wherever conformity is below 1.
 
-Parameters (Fill section, shown only for Trace with Concentric on):
+Parameters (Mode section, shown for Concentric):
 
 - **Strength** (0..1, default 0.7): scales the contour term. 0 reproduces the plain Trace exactly; 1 follows the contours as strictly as the grid allows.
 - **Falloff** (0..1, default 0.5): conformity gradient over normalized depth (0 at the boundary, 1 at the deepest node). 0 = the same everywhere; 1 = faithful at the edge, falling linearly to no contour term at the center, where the plain Trace look takes over.

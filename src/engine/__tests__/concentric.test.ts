@@ -21,7 +21,7 @@ function params(over: Partial<GenerationParams>): GenerationParams {
 }
 
 function concentric(over: Partial<GenerationParams>): GenerationParams {
-  return params({ concentric: true, concentricStrength: 1, concentricFalloff: 0, concentricInvert: false, ...over });
+  return params({ patternMode: 'concentric', concentricStrength: 1, concentricFalloff: 0, concentricInvert: false, ...over });
 }
 
 /**
@@ -95,7 +95,7 @@ describe('concentric trace', () => {
 
     it(`${name}: default strength 0.7 falloff 0.5 still raises the outer third`, () => {
       for (const seed of SEEDS) {
-        const on = alongFraction(shape, params({ seed, concentric: true }), 0);
+        const on = alongFraction(shape, params({ seed, patternMode: 'concentric' }), 0);
         const off = alongFraction(shape, params({ seed }), 0);
         expect(on).toBeGreaterThan(off + margin * 0.6);
       }
@@ -252,7 +252,7 @@ describe('concentric measurements (logs only)', () => {
         ['s1 f0', concentric({})],
         ['s1 f1', concentric({ concentricFalloff: 1 })],
         ['s1 f1 inv', concentric({ concentricFalloff: 1, concentricInvert: true })],
-        ['s.7 f.5', params({ concentric: true })],
+        ['s.7 f.5', params({ patternMode: 'concentric' })],
       ];
       for (const [label, base] of cases) {
         const bands = [0, 1, 2].map(b => {

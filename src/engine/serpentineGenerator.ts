@@ -8,6 +8,7 @@ import {
   EndCapPair,
   SegmentDescriptor,
   DirectionGuide,
+  usesTrace,
 } from '../types';
 import { OccupancyGrid } from './occupancyGrid';
 import { createSeededRandom, SeededRandom } from './random';
@@ -693,7 +694,7 @@ function generateSerpentineOnce(
   params: GenerationParams,
   guides?: DirectionGuide[]
 ): { waypoints: Waypoint[]; structure: PathStructure; fillRatio: number } {
-  if (params.fillMode === 'trace') {
+  if (usesTrace(params)) {
     // Spanning-tree Hamiltonian cycle: always a full fill, no walker, no retry.
     return generateTrace(boundary, params, guides);
   }
@@ -845,6 +846,7 @@ export function generateSerpentine(
 
   const wantsFullFill =
     params.targetFillPercent >= 100 &&
+    !usesTrace(params) &&
     (params.fillMode === 'continuous' || params.fillMode === 'wicked-wise');
 
   const FULL_FILL_THRESHOLD = 0.999;

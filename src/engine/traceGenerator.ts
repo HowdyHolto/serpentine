@@ -40,6 +40,7 @@ import {
 } from '../types';
 import { OccupancyGrid } from './occupancyGrid';
 import { createSeededRandom, SeededRandom } from './random';
+import { createValueNoise } from './noise';
 import {
   buildPathStructure,
   computeSegmentLength,
@@ -366,9 +367,16 @@ export function createDefaultEdgeWeight(params: GenerationParams): EdgeWeightFn 
   };
 }
 
-/** The weight a parameter set asks for: concentric when enabled, else the default. */
+/** The weight a pattern mode asks for: Concentric and Contour wrap the default, Serpentine is the default. */
 export function createEdgeWeight(params: GenerationParams, coarse: CoarseGrid): EdgeWeightFn {
-  return params.concentric ? createConcentricEdgeWeight(params, coarse) : createDefaultEdgeWeight(params);
+  switch (params.patternMode) {
+    case 'concentric':
+      return createConcentricEdgeWeight(params, coarse);
+    case 'contour':
+      return createContourEdgeWeight(params, coarse);
+    default:
+      return createDefaultEdgeWeight(params);
+  }
 }
 
 /**
@@ -443,6 +451,13 @@ export interface FieldWeightOptions {
    * uses depth; terrain could use slope, a photo mode the distance to a band edge.
    */
   conformity: (node: number, field: ScalarField) => number;
+  /**
+   * How "across" an edge is measured. 'value' (default): the change in field
+   * value over the edge in units, so flat ground barely steers. 'direction':
+   * the cosine between the edge and the gradient, so even gentle slopes steer
+   * fully; what a terrain wants.
+   */
+  measure?: 'value' | 'direction';
 }
 
 /**
@@ -461,6 +476,7 @@ export function createFieldEdgeWeight(
   const base = createDefaultEdgeWeight(params);
   const strength = Math.min(1, Math.max(0, opts.strength));
   const { conformity } = opts;
+  const measure = opts.measure ?? 'value';
 
   return (ctx) => {
     let w = base(ctx);
@@ -469,7 +485,15 @@ export function createFieldEdgeWeight(
     if (c <= 0) return w;
     // 0 for an edge along an iso-line, 1 for one straight across; on a curved
     // contour the axis edge closest to the tangent scores lowest.
-    const crossing = Math.min(1, Math.abs(field.value[ctx.to] - field.value[ctx.from]) / field.unit);
+    let crossing: number;
+    if (measure === 'direction') {
+      const gx = field.gx[ctx.from] + field.gx[ctx.to];
+      const gy = field.gy[ctx.from] + field.gy[ctx.to];
+      const g = Math.hypot(gx, gy);
+      crossing = g > 1e-12 ? Math.abs(ctx.vertical ? gy : gx) / g : 0.5;
+    } else {
+      crossing = Math.min(1, Math.abs(field.value[ctx.to] - field.value[ctx.from]) / field.unit);
+    }
     w += CONTOUR_COST * c * (crossing - 0.5);
     return w;
   };
@@ -496,6 +520,77 @@ export function createConcentricEdgeWeight(params: GenerationParams, coarse: Coa
   return createFieldEdgeWeight(params, distanceField(coarse), {
     strength: params.concentricStrength,
     conformity: (node, field) => concentricConformity(normalizedValue(field, node), falloff, invert),
+  });
+}
+
+/**
+ * A height field sampled over the coarse nodes: `sample(x, y)` is called with
+ * coarse coordinates (one unit per coarse step). The unit is the mean
+ * gradient magnitude over active nodes, so a step straight up a typical
+ * slope counts as fully across and a step along a contour as not at all.
+ */
+export function heightField(coarse: CoarseGrid, sample: (x: number, y: number) => number): ScalarField {
+  const { cols, rows, active } = coarse;
+  const n = cols * rows;
+  const value = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    if (!active[k]) continue;
+    const C = k % cols;
+    const R = (k - C) / cols;
+    value[k] = sample(C, R);
+  }
+  const field = makeScalarField(coarse, value, 1);
+  let sum = 0;
+  let count = 0;
+  for (let k = 0; k < n; k++) {
+    if (!active[k]) continue;
+    sum += Math.hypot(field.gx[k], field.gy[k]);
+    count++;
+  }
+  field.unit = Math.max(1e-9, count > 0 ? sum / count : 1);
+  return field;
+}
+
+/** Slope of a node, 0 on the flattest active node and 1 on the steepest. */
+export function normalizedSlope(field: ScalarField, coarse: CoarseGrid): (node: number) => number {
+  let max = 0;
+  for (let k = 0; k < field.value.length; k++) {
+    if (!coarse.active[k]) continue;
+    const g = Math.hypot(field.gx[k], field.gy[k]);
+    if (g > max) max = g;
+  }
+  return (node) => (max > 0 ? Math.hypot(field.gx[node], field.gy[node]) / max : 0);
+}
+
+/**
+ * Conformity at normalized slope `t`: 1 everywhere for slopeResponse 0, equal
+ * to the slope for slopeResponse 1 (faithful on steep ground, random on
+ * flat). Invert is faithful on flat ground instead.
+ */
+export function contourConformity(t: number, slopeResponse: number, invert: boolean): number {
+  const r = Math.min(1, Math.max(0, slopeResponse));
+  const s = invert ? 1 - t : t;
+  return 1 - r + r * s;
+}
+
+/**
+ * Terrain ("contour") weights: the field weight over a seeded value-noise
+ * height field whose hills are `contourScale` px apart, with conformity a
+ * function of slope set by `contourSlope` and `contourInvert`. The result
+ * reads like contour lines on a topographic map.
+ */
+export function createContourEdgeWeight(params: GenerationParams, coarse: CoarseGrid): EdgeWeightFn {
+  const cellSize = params.strokeWidth + params.minGap;
+  const scaleInCoarseSteps = Math.max(1, params.contourScale / (2 * cellSize));
+  const noise = createValueNoise(params.seed, scaleInCoarseSteps);
+  const field = heightField(coarse, noise);
+  const slope = normalizedSlope(field, coarse);
+  const response = params.contourSlope;
+  const invert = params.contourInvert;
+  return createFieldEdgeWeight(params, field, {
+    strength: params.contourStrength,
+    conformity: (node) => contourConformity(slope(node), response, invert),
+    measure: 'direction',
   });
 }
 

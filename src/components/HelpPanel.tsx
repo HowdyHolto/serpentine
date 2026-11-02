@@ -120,12 +120,12 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
           Frozen waypoints stay fixed when regenerating. Unfrozen gaps fill with new paths using the locked parameters.
         </div>
 
-        <SectionTitle title="Fill Modes" />
+        <SectionTitle title="Modes" />
         <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>
-          <span style={{ color: colors.accent }}>Trace</span> — grows a random tree over the boundary and traces around it: one non-crossing line that fills every cell on every seed. Closed Loop keeps it as a ring with no ends; Pieces cuts it into several paths. Concentric makes the line follow the boundary's offset contours as it works inward, with Strength for how strictly, Falloff for how soon it goes random toward the center, and Invert to be faithful at the center instead.{' '}
-          <span style={{ color: colors.accent }}>Continuous</span> — a wandering walker, single line, sparse.{' '}
-          <span style={{ color: colors.accent }}>Multi-Pass</span> — several walker segments.{' '}
-          <span style={{ color: colors.accent }}>Wicked Wise</span> — wall-hugging walker.
+          <span style={{ color: colors.accent }}>Serpentine</span> — grows a random tree over the boundary and traces around it: one non-crossing line that fills every cell on every seed.{' '}
+          <span style={{ color: colors.accent }}>Concentric</span> — the same line follows the boundary's offset contours as it works inward. Strength sets how strictly, Falloff how soon it goes random toward the center, Invert makes it faithful at the center instead.{' '}
+          <span style={{ color: colors.accent }}>Contour</span> — the line follows the iso-lines of a seeded terrain, like a topographic map. Feature Size spaces the hills, Slope Response keeps it faithful on steep ground and loose on flat.{' '}
+          Closed Loop keeps any of them as a ring with no ends; Pieces cuts the line into several paths. The Engine disclosure under Serpentine still offers the older walkers (Continuous, Multi-Pass, Wicked Wise) for a sparser look.
         </div>
 
         <SectionTitle title="Direction Guides" />

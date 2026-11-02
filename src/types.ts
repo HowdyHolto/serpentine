@@ -15,6 +15,14 @@ export interface BoundaryShape {
 export type TurnStyle = 'rounded' | 'squared';
 export type CapStyle = 'round' | 'butt';
 export type SegmentMode = 'fixed' | 'random';
+/**
+ * What the pattern is: a free Serpentine fill, a Concentric fill that follows
+ * the boundary's offset contours, or a Contour fill that follows the
+ * iso-lines of a terrain-like height field. Concentric and Contour always run
+ * on the Trace engine; Serpentine runs on `fillMode`.
+ */
+export type PatternMode = 'serpentine' | 'concentric' | 'contour';
+/** The engine behind a Serpentine pattern. Trace is the default; the rest are the legacy walkers. */
 export type FillMode = 'trace' | 'continuous' | 'multi-pass' | 'wicked-wise';
 export type AngleMode = 90 | 45 | 30;
 export type ActiveTool = 'select' | 'rectangle' | 'ellipse' | 'pen' | 'redirect' | 'fill';
@@ -48,14 +56,26 @@ export interface GenerationParams {
   closedLoop: boolean;
   /** Trace only: cut the loop into this many open paths (1 = one path). */
   tracePieces: number;
-  /** Trace only: follow the boundary's offset contours (contour-parallel fill). */
-  concentric: boolean;
-  /** 0..1: how strongly edges prefer to run along iso-distance contours. */
+  patternMode: PatternMode;
+  /** Concentric, 0..1: how strongly edges prefer to run along iso-distance contours. */
   concentricStrength: number;
   /** 0..1: 0 = uniform conformity, 1 = faithful at the edge and fully random at the center. */
   concentricFalloff: number;
   /** Reverse the gradient: faithful at the center, random at the edge. */
   concentricInvert: boolean;
+  /** Contour, 0..1: how strongly edges prefer to run along the height field's iso-lines. */
+  contourStrength: number;
+  /** Contour: feature size of the height field in px (how far apart its hills are). */
+  contourScale: number;
+  /** Contour, 0..1: 0 = conformity uniform, 1 = conformity follows slope (faithful on steep ground, loose on flat). */
+  contourSlope: number;
+  /** Contour: faithful on flat ground instead of steep. */
+  contourInvert: boolean;
+}
+
+/** True when the pattern runs on the Trace engine (every mode but a legacy Serpentine engine). */
+export function usesTrace(params: GenerationParams): boolean {
+  return params.patternMode !== 'serpentine' || params.fillMode === 'trace';
 }
 
 export interface Waypoint {
@@ -129,8 +149,12 @@ export const DEFAULT_PARAMS: GenerationParams = {
   maxPasses: 10,
   closedLoop: false,
   tracePieces: 1,
-  concentric: false,
+  patternMode: 'serpentine',
   concentricStrength: 0.7,
   concentricFalloff: 0.5,
   concentricInvert: false,
+  contourStrength: 0.8,
+  contourScale: 160,
+  contourSlope: 0.6,
+  contourInvert: false,
 };

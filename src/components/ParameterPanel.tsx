@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
-import { GenerationParams, TurnStyle, CapStyle, SegmentMode, FillMode, AngleMode } from '../types';
+import { GenerationParams, TurnStyle, CapStyle, SegmentMode, FillMode, AngleMode, PatternMode, usesTrace } from '../types';
 import { SliderControl } from './SliderControl';
 import { colors, gradients } from '../theme';
 
@@ -117,6 +117,41 @@ function Switch({
   );
 }
 
+const MODE_HINTS: Record<PatternMode, string> = {
+  serpentine: 'Free random fill: one non-crossing line that covers every cell on every seed.',
+  concentric: "Follows the boundary's offset contours as it works inward, hairpinning between rings.",
+  contour: 'Follows the iso-lines of a seeded terrain, like a topographic map. The seed reshapes the terrain.',
+};
+
+function Disclosure({
+  label,
+  defaultOpen = false,
+  children,
+}: {
+  label: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-lg" style={{ border: `1px solid ${colors.borderSubtle}` }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center justify-between w-full px-2.5 py-1.5"
+        style={{ color: colors.textDim }}
+      >
+        <span className="text-[10px] uppercase tracking-wider">{label}</span>
+        <ChevronDown
+          size={12}
+          className={`transition-transform ${open ? '' : '-rotate-90'}`}
+          style={{ color: colors.textFaint }}
+        />
+      </button>
+      {open && <div className="px-2.5 pb-2.5 space-y-3">{children}</div>}
+    </div>
+  );
+}
+
 export function ParameterPanel({
   params,
   onChange,
@@ -159,6 +194,139 @@ export function ParameterPanel({
           </div>
         </div>
       )}
+
+      <PanelSection title="Mode">
+        <ToggleGroup
+          options={[
+            { label: 'Serpentine', value: 'serpentine' as PatternMode },
+            { label: 'Concentric', value: 'concentric' as PatternMode },
+            { label: 'Contour', value: 'contour' as PatternMode },
+          ]}
+          value={params.patternMode}
+          onChange={(v) => update('patternMode', v)}
+        />
+        <div className="text-[10px]" style={{ color: colors.textFaint }}>
+          {MODE_HINTS[params.patternMode]}
+        </div>
+
+        {params.patternMode === 'concentric' && (
+          <>
+            <SliderControl
+              label="Strength"
+              value={params.concentricStrength}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => update('concentricStrength', v)}
+            />
+            <SliderControl
+              label="Falloff"
+              value={params.concentricFalloff}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => update('concentricFalloff', v)}
+            />
+            <Switch
+              label="Invert"
+              checked={params.concentricInvert}
+              onChange={(v) => update('concentricInvert', v)}
+              title="Faithful to the contours at the center, random at the edge"
+            />
+            <div className="text-[10px]" style={{ color: colors.textFaint }}>
+              Falloff 0 follows the contours everywhere; 1 lets go toward the center.
+            </div>
+          </>
+        )}
+
+        {params.patternMode === 'contour' && (
+          <>
+            <SliderControl
+              label="Strength"
+              value={params.contourStrength}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => update('contourStrength', v)}
+            />
+            <SliderControl
+              label="Feature Size"
+              value={params.contourScale}
+              min={40}
+              max={600}
+              step={10}
+              onChange={(v) => update('contourScale', v)}
+            />
+            <SliderControl
+              label="Slope Response"
+              value={params.contourSlope}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => update('contourSlope', v)}
+            />
+            <Switch
+              label="Invert"
+              checked={params.contourInvert}
+              onChange={(v) => update('contourInvert', v)}
+              title="Faithful on flat ground instead of steep"
+            />
+            <div className="text-[10px]" style={{ color: colors.textFaint }}>
+              Slope Response 0 follows the terrain everywhere; 1 is faithful on steep ground and loose on flat.
+            </div>
+          </>
+        )}
+
+        {params.patternMode === 'serpentine' && (
+          <Disclosure label="Engine" defaultOpen={params.fillMode !== 'trace'}>
+            <ToggleGroup
+              columns={2}
+              options={[
+                { label: 'Trace', value: 'trace' as FillMode },
+                { label: 'Continuous', value: 'continuous' as FillMode },
+                { label: 'Multi-Pass', value: 'multi-pass' as FillMode },
+                { label: 'Wicked Wise', value: 'wicked-wise' as FillMode },
+              ]}
+              value={params.fillMode}
+              onChange={(v) => update('fillMode', v)}
+            />
+            {params.fillMode === 'trace' ? (
+              <div className="text-[10px]" style={{ color: colors.textFaint }}>
+                Trace always fills completely. The others are the older walkers, kept for their sparser look.
+              </div>
+            ) : params.fillMode === 'multi-pass' ? (
+              <>
+                <SliderControl
+                  label="Target Fill %"
+                  value={params.targetFillPercent}
+                  min={10}
+                  max={100}
+                  onChange={(v) => update('targetFillPercent', v)}
+                />
+                <SliderControl
+                  label="Max Separate Paths"
+                  value={params.maxPasses}
+                  min={1}
+                  max={30}
+                  onChange={(v) => update('maxPasses', v)}
+                />
+              </>
+            ) : (
+              <div>
+                <Switch
+                  label="Fill Completely"
+                  checked={params.targetFillPercent >= 100}
+                  onChange={(v) => update('targetFillPercent', v ? 100 : 75)}
+                  title="Retry with nearby seeds until the boundary is fully covered (slower)"
+                />
+                <div className="text-[10px] mt-1" style={{ color: colors.textFaint }}>
+                  Sweeps nearby seeds and keeps the best coverage. Slower.
+                </div>
+              </div>
+            )}
+          </Disclosure>
+        )}
+      </PanelSection>
 
       <PanelSection title="Stroke">
         <SliderControl
@@ -278,22 +446,8 @@ export function ParameterPanel({
         )}
       </PanelSection>
 
-      <PanelSection title="Fill">
-        <div>
-          <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Fill Mode</label>
-          <ToggleGroup
-            columns={2}
-            options={[
-              { label: 'Trace', value: 'trace' as FillMode },
-              { label: 'Continuous', value: 'continuous' as FillMode },
-              { label: 'Multi-Pass', value: 'multi-pass' as FillMode },
-              { label: 'Wicked Wise', value: 'wicked-wise' as FillMode },
-            ]}
-            value={params.fillMode}
-            onChange={(v) => update('fillMode', v)}
-          />
-        </div>
-        {params.fillMode === 'trace' ? (
+      <PanelSection title="Path">
+        {usesTrace(params) && (
           <>
             <Switch
               label="Closed Loop"
@@ -310,72 +464,7 @@ export function ParameterPanel({
                 onChange={(v) => update('tracePieces', v)}
               />
             )}
-            <Switch
-              label="Concentric"
-              checked={params.concentric}
-              onChange={(v) => update('concentric', v)}
-              title="Run along the boundary's offset contours as the path works inward"
-            />
-            {params.concentric && (
-              <>
-                <SliderControl
-                  label="Strength"
-                  value={params.concentricStrength}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  onChange={(v) => update('concentricStrength', v)}
-                />
-                <SliderControl
-                  label="Falloff"
-                  value={params.concentricFalloff}
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  onChange={(v) => update('concentricFalloff', v)}
-                />
-                <Switch
-                  label="Invert"
-                  checked={params.concentricInvert}
-                  onChange={(v) => update('concentricInvert', v)}
-                  title="Faithful to the contours at the center, random at the edge"
-                />
-              </>
-            )}
-            <div className="text-[10px]" style={{ color: colors.textFaint }}>
-              Fills the whole boundary on every seed. Segment length, bias and guides shape the tree it traces.
-              {params.concentric && ' Falloff 0 follows the contours everywhere; 1 lets go toward the center.'}
-            </div>
           </>
-        ) : params.fillMode === 'multi-pass' ? (
-          <>
-            <SliderControl
-              label="Target Fill %"
-              value={params.targetFillPercent}
-              min={10}
-              max={100}
-              onChange={(v) => update('targetFillPercent', v)}
-            />
-            <SliderControl
-              label="Max Separate Paths"
-              value={params.maxPasses}
-              min={1}
-              max={30}
-              onChange={(v) => update('maxPasses', v)}
-            />
-          </>
-        ) : (
-          <div>
-            <Switch
-              label="Fill Completely"
-              checked={params.targetFillPercent >= 100}
-              onChange={(v) => update('targetFillPercent', v ? 100 : 75)}
-              title="Retry with nearby seeds until the boundary is fully covered (slower)"
-            />
-            <div className="text-[10px] mt-1" style={{ color: colors.textFaint }}>
-              Sweeps nearby seeds and keeps the best coverage. Slower.
-            </div>
-          </div>
         )}
         <SliderControl
           label="Horizontal Bias"

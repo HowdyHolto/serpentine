@@ -10,6 +10,7 @@ import {
   DirectionGuide,
   WalkDirection,
   DEFAULT_PARAMS,
+  usesTrace,
 } from './types';
 import { generateSerpentine } from './engine/serpentineGenerator';
 import { partialRegenerate } from './engine/partialRegenerate';
@@ -103,6 +104,7 @@ export default function App() {
       }
     } else if (
       params.targetFillPercent >= 100 &&
+      !usesTrace(params) &&
       (params.fillMode === 'continuous' || params.fillMode === 'wicked-wise') &&
       result.fillRatio < 0.999
     ) {
