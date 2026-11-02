@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { BoundaryShape, DEFAULT_PARAMS, GenerationParams, Rock } from '../../types';
-import { generateRakeLines, generateRake, edgeDistance, smooth, simplify, isoLines, pruneCrowded } from '../rake';
+import { BoundaryShape, DEFAULT_PARAMS, GenerationParams, Point, Rock } from '../../types';
+import { generateRakeLines, generateRake, edgeDistance, smooth, simplify, isoLines, pruneCrowded, RakeLine } from '../rake';
 import { generateSerpentine } from '../serpentineGenerator';
 import { renderPaths } from '../pathRenderer';
 import { pointInPolygon, makePolygonBoundary } from '../geometry';
@@ -125,5 +125,29 @@ describe('rake', () => {
     });
     const kept = pruneCrowded([ring(50, 0), ring(54, 1), ring(80, 2)], 10);
     expect(kept.map((l) => l.level)).toEqual([0, 2]);
+  });
+
+  it('keeps a ring that wobbles around the crowding distance whole instead of dashing it', () => {
+    const ring = (r: number, level: number, wobble = 0): RakeLine => {
+      const points: Point[] = [];
+      for (let a = 0; a < 360; a += 2) {
+        const rr = r + wobble * Math.sin((a * Math.PI) / 180 * 18);
+        points.push({ x: 200 + rr * Math.cos((a * Math.PI) / 180), y: 200 + rr * Math.sin((a * Math.PI) / 180) });
+      }
+      return { points, closed: true, level, t: level };
+    };
+    // 10.8 ± 1.2 px from the inner ring: in and out of a 10 px threshold every few px.
+    const flicker = pruneCrowded([ring(50, 0), ring(60.8, 1, 1.2)], 10, 21, 8);
+    expect(flicker.length).toBe(2);
+    expect(flicker[1].closed).toBe(true);
+    // The same wobble 9 px out is too close over most of its length: dropped whole, not dashed.
+    const tooClose = pruneCrowded([ring(50, 0), ring(59, 1, 1.2)], 10, 21, 8);
+    expect(tooClose.length).toBe(1);
+    // A short dip that would make the strokes overlap still cuts.
+    const dip = ring(62, 1);
+    for (let k = 40; k < 44; k++) dip.points[k] = { x: 200 + 56.5 * Math.cos((k * 2 * Math.PI) / 180), y: 200 + 56.5 * Math.sin((k * 2 * Math.PI) / 180) };
+    const cut = pruneCrowded([ring(50, 0), dip], 10, 21, 8);
+    expect(cut.length).toBe(2);
+    expect(cut[1].closed).toBe(false);
   });
 });

@@ -272,7 +272,7 @@ export function generateRakeLines(boundary: BoundaryShape, params: GenerationPar
   let lines = isoLines(boundary, sample, step, levels).map((l) => ({ ...l, points: smooth(l.points, l.closed, 2) }));
   if (params.contourSource !== 'garden') {
     // Height-field lines bunch on steep ground; cut them where they would overlap.
-    lines = pruneCrowded(lines, params.strokeWidth + params.minGap * 0.5);
+    lines = pruneCrowded(lines, params.strokeWidth + params.minGap * 0.5, cell * 1.5, params.strokeWidth);
   }
   return lines.map((l) => ({ ...l, points: simplify(l.points, 0.25) }));
 }
@@ -280,25 +280,35 @@ export function generateRakeLines(boundary: BoundaryShape, params: GenerationPar
 /**
  * Keep lines at least `minDist` from each other, in level order: a line is
  * cut wherever it comes within minDist of a line already kept, and pieces
- * shorter than minDist are dropped. Topographic maps do the same where
+ * shorter than `bridge` are dropped. Topographic maps do the same where
  * contours crowd.
+ *
+ * With hysteresis, so a line hovering at the threshold does not flicker
+ * into dashes: a line crowded over more than half its length is dropped
+ * whole (it is the next ring in, a hair too close everywhere), and a
+ * crowded stretch shorter than `bridge` (a grazing contact, or sampling
+ * wobble) is bridged rather than cut, unless it comes within `touch` of
+ * the other line (the strokes would overlap), which always cuts.
  */
-export function pruneCrowded(lines: RakeLine[], minDist: number): RakeLine[] {
+export function pruneCrowded(lines: RakeLine[], minDist: number, bridge: number = minDist, touch = 0): RakeLine[] {
   const bucket = minDist;
   const hash = new Map<string, Point[]>();
   const keyOf = (x: number, y: number) => `${Math.floor(x / bucket)},${Math.floor(y / bucket)}`;
-  const crowded = (p: Point): boolean => {
+  /** Distance to the nearest kept point within minDist, or Infinity. */
+  const nearest = (p: Point): number => {
     const bx = Math.floor(p.x / bucket), by = Math.floor(p.y / bucket);
+    let best = Infinity;
     for (let j = by - 1; j <= by + 1; j++) {
       for (let i = bx - 1; i <= bx + 1; i++) {
         const list = hash.get(`${i},${j}`);
         if (!list) continue;
         for (const q of list) {
-          if (Math.hypot(q.x - p.x, q.y - p.y) < minDist) return true;
+          const d = Math.hypot(q.x - p.x, q.y - p.y);
+          if (d < best) best = d;
         }
       }
     }
-    return false;
+    return best < minDist ? best : Infinity;
   };
   const accept = (pts: Point[]) => {
     for (const p of pts) {
@@ -312,8 +322,17 @@ export function pruneCrowded(lines: RakeLine[], minDist: number): RakeLine[] {
   const order = [...lines].sort((a, b) => a.level - b.level);
   for (const line of order) {
     const pts = line.closed ? [...line.points, line.points[0]] : line.points;
-    const flags = pts.map((p) => crowded(p));
-    // A grazing contact crowds only a short stretch; bridging it beats a stray cut.
+    const dist = pts.map((p) => nearest(p));
+    const flags = dist.map((d) => d < minDist);
+    // Mostly crowded: this is the next ring in, a hair too close all round. Drop it whole.
+    let total = 0, crowdedLen = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      total += d;
+      if (flags[i] && flags[i - 1]) crowdedLen += d;
+    }
+    if (total > 0 && crowdedLen > total * 0.5) continue;
+    // A grazing contact or sampling wobble crowds only a short stretch; bridging it beats a stray cut.
     for (let i = 0; i < pts.length; ) {
       if (!flags[i]) { i++; continue; }
       let j = i;
@@ -323,7 +342,9 @@ export function pruneCrowded(lines: RakeLine[], minDist: number): RakeLine[] {
         j++;
       }
       const interior = i > 0 && j < pts.length - 1;
-      if (interior && len < minDist) for (let k = i; k <= j; k++) flags[k] = false;
+      let touching = false;
+      for (let k = i; k <= j && !touching; k++) if (dist[k] < touch) touching = true;
+      if (interior && len < bridge && !touching) for (let k = i; k <= j; k++) flags[k] = false;
       i = j + 1;
     }
     let run: Point[] = [];
@@ -346,7 +367,7 @@ export function pruneCrowded(lines: RakeLine[], minDist: number): RakeLine[] {
     for (const piece of pieces) {
       let len = 0;
       for (let i = 1; i < piece.length; i++) len += Math.hypot(piece[i].x - piece[i - 1].x, piece[i].y - piece[i - 1].y);
-      if (len < minDist) continue;
+      if (len < bridge) continue;
       const closed = intact && line.closed;
       out.push({ ...line, points: closed ? piece.slice(0, -1) : piece, closed });
       accept(piece);
