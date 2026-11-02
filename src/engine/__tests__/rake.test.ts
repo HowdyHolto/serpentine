@@ -107,7 +107,6 @@ describe('rake', () => {
     const p = params({ contourSource: 'noise', contourScale: 120, strokeWidth: 8, minGap: 6 });
     const lines = generateRakeLines(RECT, p, []);
     expect(lines.length).toBeGreaterThan(5);
-    const minDist = p.strokeWidth + p.minGap * 0.5;
     const all: Array<{ x: number; y: number; line: number }> = [];
     lines.forEach((l, li) => l.points.forEach((q) => all.push({ x: q.x, y: q.y, line: li })));
     let closest = Infinity;

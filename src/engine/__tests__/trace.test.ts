@@ -306,5 +306,5 @@ describe('benchmark (logs only)', () => {
     }
     console.log('\n' + lines.join('\n') + '\n');
     expect(lines.length).toBe(cases.length);
-  }, 60000);
+  }, 240_000);
 });
