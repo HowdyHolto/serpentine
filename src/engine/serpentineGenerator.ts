@@ -14,6 +14,7 @@ import { OccupancyGrid } from './occupancyGrid';
 import { createSeededRandom, SeededRandom } from './random';
 import { wickedWiseContinuous } from './wickedWiseWalker';
 import { generateTrace } from './traceGenerator';
+import { applyJitter } from './jitter';
 
 export type DirectionBiasMap = Map<number, WalkDirection>;
 
@@ -853,7 +854,7 @@ export function generateSerpentine(
 
   if (!wantsFullFill || baseAttempt.fillRatio >= FULL_FILL_THRESHOLD) {
     return {
-      waypoints: baseAttempt.waypoints,
+      waypoints: applyJitter(baseAttempt.waypoints, params),
       structure: baseAttempt.structure,
       params,
       fillRatio: baseAttempt.fillRatio,
@@ -896,7 +897,7 @@ export function generateSerpentine(
   }
 
   return {
-    waypoints: best.waypoints,
+    waypoints: applyJitter(best.waypoints, best.params),
     structure: best.structure,
     params: best.params,
     fillRatio: best.fillRatio,

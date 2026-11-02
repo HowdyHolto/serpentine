@@ -160,6 +160,10 @@ The 16 contour tests cover the noise (deterministic per seed, 0..1, smooth), the
 
 Known limits: the same 4-connected ceiling as Concentric on a curve (a contour at 45° is a staircase, so scores top out near 60%); at the default cell (14 px) a 480 px boundary only fits one or two hills, so the terrain reads as a few large domains until the stroke and gap shrink or the feature size drops; the frozen-waypoint regeneration still uses the old walker for every mode. Follow-ups: an image field (`imageField(imageData, blur, bands)`, with bands driving Pieces and stroke colour) is the photo mashup, and an inner seed shape for Concentric is a distance field measured from the seed; both are new `ScalarField` producers, no engine change.
 
+## Jitter (2026-11-02)
+
+A **Jitter** slider (Path section, 0..1, default 0) nudges every anchor after generation so lines lean and wobble organically, from Holt's request for a slight haphazard feel without mess. `applyJitter` in `src/engine/jitter.ts` displaces each waypoint by a smooth seeded value-noise field of position (feature size 4 cells, so neighbouring anchors move together and long runs lean rather than zigzag), with the magnitude capped at `jitter × 0.45 × minGap`. Two neighbouring strokes are one gap apart edge to edge, so even opposite nudges leave a tenth of the gap between them, and every segment is straight between anchors, so nothing ever touches or crosses; `jitter.test.ts` checks the minimum centerline distance between non-adjacent segments at full jitter on a rect and an ellipse. The displacement is a function of seed and position, so a closed loop's coincident ends stay coincident. The path structure (end-cap pairs, segment axes) is built from the clean layout before the nudge. The corner solver now treats |cos| < 0.3 as a right angle and cos > 0.9 as the same direction, so tilted corners still get the concentric radius growth. Limits: frozen-waypoint regeneration does not jitter the new anchors; the noise scale is fixed.
+
 ## Suggested order
 
 1. Quick wins A1–A7 (restores trust in the output immediately; ship to Netlify).

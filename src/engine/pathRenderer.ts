@@ -142,6 +142,11 @@ interface Corner {
   is90: boolean;
 }
 
+/** |cos| below which a corner still counts as a right angle (jitter tilts corners a few degrees). */
+const NEAR_90_DOT = 0.3;
+/** cos above which two directions count as the same (nested corners with jitter). */
+const SAME_DIR_DOT = 0.9;
+
 function solveCornerRadii(subPaths: Waypoint[][], params: GenerationParams): Map<Waypoint, number> {
   const out = new Map<Waypoint, number>();
   const cell = params.strokeWidth + params.minGap;
@@ -208,7 +213,7 @@ function solveCornerRadii(subPaths: Waypoint[][], params: GenerationParams): Map
         wp: curr, subIdx, idx: pos,
         n1x, n1y, n2x, n2y,
         maxLeg: Math.min(len1 / 2, len2 / 2),
-        is90: Math.abs(dot) < 1e-6,
+        is90: Math.abs(dot) < NEAR_90_DOT,
       };
       corners.push(corner);
       const cc = toCell(curr.x, curr.y);
@@ -282,8 +287,8 @@ function solveCornerRadii(subPaths: Waypoint[][], params: GenerationParams): Map
       const cc = toCell(k.wp.x, k.wp.y);
       const inner = cornerAt.get(key(cc.c + Math.round(-k.n1x + k.n2x), cc.r + Math.round(-k.n1y + k.n2y)));
       const sameTurn = inner && inner.is90 &&
-        Math.abs(inner.n1x - k.n1x) < 1e-6 && Math.abs(inner.n1y - k.n1y) < 1e-6 &&
-        Math.abs(inner.n2x - k.n2x) < 1e-6 && Math.abs(inner.n2y - k.n2y) < 1e-6;
+        inner.n1x * k.n1x + inner.n1y * k.n1y > SAME_DIR_DOT &&
+        inner.n2x * k.n2x + inner.n2y * k.n2y > SAME_DIR_DOT;
       if (sameTurn && inner) {
         // Concentric with the nested corner; shrink only if our legs are short.
         r = Math.min(solve(inner) + cell, k.maxLeg);

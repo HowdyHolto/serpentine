@@ -482,6 +482,19 @@ export function ParameterPanel({
           step={0.01}
           onChange={(v) => update('directionSwitchFrequency', v)}
         />
+        <SliderControl
+          label="Jitter"
+          value={params.jitter}
+          min={0}
+          max={1}
+          step={0.05}
+          onChange={(v) => update('jitter', v)}
+        />
+        {params.jitter > 0 && (
+          <div className="text-[10px]" style={{ color: colors.textFaint }}>
+            Nudges every anchor with smooth noise, never more than half the gap, so lines lean and wobble without touching.
+          </div>
+        )}
       </PanelSection>
 
       <PanelSection title="Gaps" defaultOpen={false}>

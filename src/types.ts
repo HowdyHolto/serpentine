@@ -71,6 +71,11 @@ export interface GenerationParams {
   contourSlope: number;
   /** Contour: faithful on flat ground instead of steep. */
   contourInvert: boolean;
+  /**
+   * 0..1: nudge every anchor with smooth seeded noise so lines lean and
+   * wobble organically. Capped below half the gap, so lines never touch.
+   */
+  jitter: number;
 }
 
 /** True when the pattern runs on the Trace engine (every mode but a legacy Serpentine engine). */
@@ -157,4 +162,5 @@ export const DEFAULT_PARAMS: GenerationParams = {
   contourScale: 160,
   contourSlope: 0.6,
   contourInvert: false,
+  jitter: 0,
 };
