@@ -21,6 +21,16 @@ import { Toolbar } from './components/Toolbar';
 import { ParameterPanel } from './components/ParameterPanel';
 import { Canvas } from './components/Canvas';
 import { Toast } from './components/Toast';
+import { LibraryPanel } from './components/LibraryPanel';
+import {
+  Arrangement,
+  createArrangement,
+  defaultName,
+  downloadArrangement,
+  loadArrangements,
+  parseArrangement,
+  storeArrangements,
+} from './engine/arrangements';
 import { useCanvasTransform } from './hooks/useCanvasTransform';
 
 const CYCLE_DIRS: WalkDirection[] = ['right', 'down', 'left', 'up'];
@@ -39,6 +49,8 @@ export default function App() {
   const [frozenParams, setFrozenParams] = useState<GenerationParams | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [guides, setGuides] = useState<DirectionGuide[]>([]);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [arrangements, setArrangements] = useState<Arrangement[]>(() => loadArrangements());
 
   const waypointsRef = useRef<Waypoint[]>([]);
   const frozenIndicesRef = useRef<Set<number>>(new Set());
@@ -273,6 +285,74 @@ export default function App() {
     setGuides([]);
   }, []);
 
+  const persistArrangements = useCallback((next: Arrangement[]) => {
+    setArrangements(next);
+    if (!storeArrangements(next)) {
+      setToastMessage("Couldn't write to browser storage; export to keep a file.");
+    }
+  }, []);
+
+  const handleSaveArrangement = useCallback(
+    (name: string) => {
+      if (!boundary) return;
+      const item = createArrangement(name, {
+        boundary,
+        params: frozenParams ?? params,
+        guides,
+        waypoints,
+        structure,
+        frozenIndices,
+      });
+      persistArrangements([item, ...arrangements]);
+      setToastMessage(`Saved "${item.name}"`);
+    },
+    [boundary, params, frozenParams, guides, waypoints, structure, frozenIndices, arrangements, persistArrangements]
+  );
+
+  const handleLoadArrangement = useCallback(
+    (item: Arrangement) => {
+      const frozen = new Set(item.frozenIndices);
+      setBoundary(item.boundary);
+      setParams(item.params);
+      setGuides(item.guides);
+      setWaypoints(item.waypoints);
+      setStructure(item.structure);
+      setFrozenIndices(frozen);
+      setFrozenParams(frozen.size > 0 ? item.params : null);
+      setPaths(renderPaths(item.waypoints, item.params));
+      setActiveTool('select');
+      const { width, height } = canvasSizeRef.current;
+      if (width > 0 && height > 0) {
+        zoomToFit(item.boundary.x, item.boundary.y, item.boundary.width, item.boundary.height, width, height);
+      }
+    },
+    [zoomToFit]
+  );
+
+  const handleDeleteArrangement = useCallback(
+    (item: Arrangement) => {
+      persistArrangements(arrangements.filter((a) => a.id !== item.id));
+    },
+    [arrangements, persistArrangements]
+  );
+
+  const handleImportArrangement = useCallback(
+    (file: File) => {
+      file
+        .text()
+        .then((text) => {
+          const item = parseArrangement(text);
+          persistArrangements([item, ...arrangements.filter((a) => a.id !== item.id)]);
+          handleLoadArrangement(item);
+          setToastMessage(`Imported "${item.name}"`);
+        })
+        .catch((err: unknown) => {
+          setToastMessage(`Couldn't import: ${err instanceof Error ? err.message : 'invalid file'}`);
+        });
+    },
+    [arrangements, persistArrangements, handleLoadArrangement]
+  );
+
   const toggleHelp = useCallback(() => {
     setShowHelp((prev) => !prev);
   }, []);
@@ -316,6 +396,9 @@ export default function App() {
         case 'h':
           setCleanView((prev) => !prev);
           break;
+        case 'l':
+          setLibraryOpen((prev) => !prev);
+          break;
         case 'f':
           handleUnfreezeAllRef.current();
           break;
@@ -345,8 +428,22 @@ export default function App() {
         onFitView={fitView}
         cleanView={cleanView}
         onToggleCleanView={() => setCleanView((prev) => !prev)}
+        libraryOpen={libraryOpen}
+        onToggleLibrary={() => setLibraryOpen((prev) => !prev)}
       />
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 relative">
+        <LibraryPanel
+          isOpen={libraryOpen}
+          onClose={() => setLibraryOpen(false)}
+          items={arrangements}
+          canSave={!!boundary && paths.length > 0}
+          suggestedName={boundary ? defaultName({ params: frozenParams ?? params, boundary }) : ''}
+          onSave={handleSaveArrangement}
+          onLoad={handleLoadArrangement}
+          onDelete={handleDeleteArrangement}
+          onExport={downloadArrangement}
+          onImport={handleImportArrangement}
+        />
         <Canvas
           boundary={boundary}
           paths={paths}

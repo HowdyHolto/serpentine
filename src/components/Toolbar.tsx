@@ -14,6 +14,7 @@ import {
   Maximize,
   Eye,
   EyeOff,
+  Library,
 } from 'lucide-react';
 import { ActiveTool } from '../types';
 import { colors, gradients } from '../theme';
@@ -33,6 +34,8 @@ interface ToolbarProps {
   onFitView: () => void;
   cleanView: boolean;
   onToggleCleanView: () => void;
+  libraryOpen: boolean;
+  onToggleLibrary: () => void;
 }
 
 function ToolButton({
@@ -84,6 +87,8 @@ export function Toolbar({
   onFitView,
   cleanView,
   onToggleCleanView,
+  libraryOpen,
+  onToggleLibrary,
 }: ToolbarProps) {
   return (
     <div
@@ -129,6 +134,9 @@ export function Toolbar({
       </ToolButton>
       <ToolButton active={cleanView} onClick={onToggleCleanView} title="Lines only: hide boundary, points and guides (H)">
         {cleanView ? <EyeOff size={15} /> : <Eye size={15} />}
+      </ToolButton>
+      <ToolButton active={libraryOpen} onClick={onToggleLibrary} title="Library: save and load arrangements (L)">
+        <Library size={15} />
       </ToolButton>
 
       <Divider />
