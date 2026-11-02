@@ -13,7 +13,10 @@
  *    run for the target segment length (min/max/fixed segment length), which
  *    gives long runs and hairpins;
  *  - horizontal vs vertical edges are weighted by `fillDirectionBias`;
- *  - direction guides make edges along their axis cheap within their radius.
+ *  - direction guides make edges along their axis cheap within their radius;
+ *  - Concentric adds a contour term: an edge along an iso-distance contour of
+ *    the mask is cheap and one that crosses contours is expensive, scaled by a
+ *    conformity gradient over normalized distance (see createConcentricEdgeWeight).
  *
  * Masks: a coarse node exists only where all four of its fine cells are inside
  * the mask, so on an ellipse the ring of partial blocks along the edge is left
@@ -63,6 +66,9 @@ const JITTER = 0.3;
 const OVERSHOOT_COST = 1.2;
 const BIAS_COST = 0.8;
 const GUIDE_COST = 0.7;
+// Full-strength contour term: crossing minus along must beat turn + overshoot
+// + jitter (2.1) so a faithful ring is never left for a straighter run.
+const CONTOUR_COST = 2.5;
 
 interface HeapEdge {
   w: number;
@@ -124,11 +130,14 @@ export interface CoarseGrid {
   /** Tree edge bitmask (UP|RIGHT|DOWN|LEFT) per node, filled by growSpanningTree. */
   edges: Uint8Array;
   /**
-   * Distance of each active node from the mask edge, in coarse steps
-   * (4-neighbour BFS): 1 on the outermost ring, growing inward. 0 for
-   * inactive nodes. This is what a contour-parallel weight reads.
+   * Distance of each active node from the mask edge in coarse steps: 1 on
+   * the outer ring (nodes that touch the grid border or an inactive node),
+   * then 1 + the Euclidean distance to the nearest outer-ring node, so the
+   * iso-distance contours are smooth offsets of a curved boundary. On a
+   * rectangle this equals the 4-neighbour BFS step count. 0 for inactive
+   * nodes. This is what the concentric weight reads.
    */
-  distance: Int32Array;
+  distance: Float64Array;
 }
 
 export function buildCoarseGrid(grid: OccupancyGrid): CoarseGrid {
@@ -189,44 +198,93 @@ export function buildCoarseGrid(grid: OccupancyGrid): CoarseGrid {
     if (label[k] === bestLabel) active[k] = 1;
   }
 
-  // Distance transform: multi-source BFS from the ring of nodes that touch
-  // the grid border or an inactive node.
-  const distance = new Int32Array(n);
-  const queue: number[] = [];
+  // Distance transform: exact Euclidean distance to the ring of nodes that
+  // touch the grid border or an inactive node, plus 1 so the ring itself is 1.
+  const sq = new Float64Array(n).fill(DT_INF);
   for (let k = 0; k < n; k++) {
     if (!active[k]) continue;
     const C = k % cols;
     const R = (k - C) / cols;
-    let onEdge = false;
     for (const d of COARSE_DIRS) {
       const nc = C + d.dc;
       const nr = R + d.dr;
       if (nc < 0 || nc >= cols || nr < 0 || nr >= rows || !active[nr * cols + nc]) {
-        onEdge = true;
+        sq[k] = 0;
         break;
       }
     }
-    if (onEdge) {
-      distance[k] = 1;
-      queue.push(k);
-    }
   }
-  for (let qi = 0; qi < queue.length; qi++) {
-    const k = queue[qi];
-    const C = k % cols;
-    const R = (k - C) / cols;
-    for (const d of COARSE_DIRS) {
-      const nc = C + d.dc;
-      const nr = R + d.dr;
-      if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
-      const nk = nr * cols + nc;
-      if (!active[nk] || distance[nk] !== 0) continue;
-      distance[nk] = distance[k] + 1;
-      queue.push(nk);
-    }
+  squaredDistanceTransform(sq, cols, rows);
+  const distance = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    if (active[k]) distance[k] = 1 + Math.sqrt(sq[k]);
   }
 
   return { cols, rows, present, active, edges: new Uint8Array(n), distance };
+}
+
+const DT_INF = 1e20;
+
+/**
+ * One-dimensional squared Euclidean distance transform (Felzenszwalb and
+ * Huttenlocher): d[q] = min over p of (q - p)^2 + f[p], computed in place
+ * on a strided view of `f`. `v`, `z` and `tmp` are scratch of length n, n + 1
+ * and n.
+ */
+function dt1d(
+  f: Float64Array,
+  offset: number,
+  stride: number,
+  n: number,
+  v: Int32Array,
+  z: Float64Array,
+  tmp: Float64Array
+): void {
+  let k = 0;
+  v[0] = 0;
+  z[0] = -Infinity;
+  z[1] = Infinity;
+  for (let q = 1; q < n; q++) {
+    const fq = f[offset + q * stride];
+    for (;;) {
+      const p = v[k];
+      const fp = f[offset + p * stride];
+      const s = (fq + q * q - (fp + p * p)) / (2 * q - 2 * p);
+      if (s <= z[k]) {
+        if (k > 0) {
+          k--;
+          continue;
+        }
+        // The new parabola dominates everything so far.
+        v[0] = q;
+        z[0] = -Infinity;
+        z[1] = Infinity;
+      } else {
+        k++;
+        v[k] = q;
+        z[k] = s;
+        z[k + 1] = Infinity;
+      }
+      break;
+    }
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) {
+    while (z[k + 1] < q) k++;
+    const p = v[k];
+    tmp[q] = (q - p) * (q - p) + f[offset + p * stride];
+  }
+  for (let q = 0; q < n; q++) f[offset + q * stride] = tmp[q];
+}
+
+/** Two-pass exact squared Euclidean distance transform of a cols x rows field, in place. */
+function squaredDistanceTransform(f: Float64Array, cols: number, rows: number): void {
+  const m = Math.max(cols, rows);
+  const v = new Int32Array(m);
+  const z = new Float64Array(m + 1);
+  const tmp = new Float64Array(m);
+  for (let C = 0; C < cols; C++) dt1d(f, C, cols, rows, v, z, tmp);
+  for (let R = 0; R < rows; R++) dt1d(f, R * cols, 1, cols, v, z, tmp);
 }
 
 /** Coarse node nearest the bottom-left corner, matching today's start corner. */
@@ -264,9 +322,11 @@ export interface EdgeContext {
   /** Length so far and target length (coarse steps) of the run ending at `from`. */
   runLength: number;
   runTarget: number;
-  /** Distance from the mask edge in coarse steps (see CoarseGrid.distance). */
+  /** Distance from the mask edge in coarse steps (see CoarseGrid.distance; 1 on the outer ring). */
   fromDistance: number;
   toDistance: number;
+  /** Largest distance of any active node (the deepest ring); at least 1. */
+  maxDistance: number;
   /** Axis a direction guide asks for at `from`: true vertical, false horizontal. */
   guideAxis: boolean | undefined;
   rng: SeededRandom;
@@ -276,9 +336,8 @@ export type EdgeWeightFn = (ctx: EdgeContext) => number;
 
 /**
  * The default weights: straight-within-target < turn < overshoot, tilted by
- * the horizontal/vertical bias and pulled along direction guides. A
- * contour-parallel ("concentric") mode would wrap this and add a term that
- * compares the edge direction with the gradient of `fromDistance`.
+ * the horizontal/vertical bias and pulled along direction guides. The
+ * concentric mode wraps this (createConcentricEdgeWeight).
  */
 export function createDefaultEdgeWeight(params: GenerationParams): EdgeWeightFn {
   const horizontalBias = Math.min(1, Math.max(0, params.fillDirectionBias));
@@ -301,6 +360,49 @@ export function createDefaultEdgeWeight(params: GenerationParams): EdgeWeightFn 
   };
 }
 
+/** The weight a parameter set asks for: concentric when enabled, else the default. */
+export function createEdgeWeight(params: GenerationParams): EdgeWeightFn {
+  return params.concentric ? createConcentricEdgeWeight(params) : createDefaultEdgeWeight(params);
+}
+
+/**
+ * Conformity of a node at normalized depth `t` (0 on the outer ring, 1 at the
+ * deepest node): 1 everywhere for falloff 0, falling linearly to 0 at the
+ * center for falloff 1. Invert measures depth from the center instead.
+ */
+export function concentricConformity(t: number, falloff: number, invert: boolean): number {
+  const depth = invert ? 1 - t : t;
+  return Math.max(0, 1 - Math.min(1, Math.max(0, falloff)) * depth);
+}
+
+/**
+ * Contour-parallel ("concentric") weights: the default weight plus a term
+ * that makes an edge running along an iso-distance contour (no change in
+ * distance from the mask edge) cheaper and an edge that crosses contours
+ * dearer, in proportion to how much the distance changes. The term is scaled by `concentricStrength` and by the
+ * conformity at the edge's mean depth, so straightness, bias and guides still
+ * shape the tree wherever conformity is low.
+ */
+export function createConcentricEdgeWeight(params: GenerationParams): EdgeWeightFn {
+  const base = createDefaultEdgeWeight(params);
+  const strength = Math.min(1, Math.max(0, params.concentricStrength));
+  const falloff = params.concentricFalloff;
+  const invert = params.concentricInvert;
+
+  return (ctx) => {
+    let w = base(ctx);
+    if (strength <= 0) return w;
+    const span = Math.max(1, ctx.maxDistance - 1);
+    const t = ((ctx.fromDistance + ctx.toDistance) / 2 - 1) / span;
+    const c = strength * concentricConformity(t, falloff, invert);
+    // 0 for an edge along a contour, 1 for one straight across; on a curved
+    // boundary the axis edge closest to the tangent scores lowest.
+    const crossing = Math.min(1, Math.abs(ctx.toDistance - ctx.fromDistance));
+    w += CONTOUR_COST * c * (crossing - 0.5);
+    return w;
+  };
+}
+
 /**
  * Weighted randomized Prim. Each node remembers the direction it was reached
  * from and how long that straight run is, so the weight of extending it can
@@ -312,7 +414,7 @@ export function growSpanningTree(
   params: GenerationParams,
   rng: SeededRandom,
   biasMap?: DirectionBiasMap,
-  weight: EdgeWeightFn = createDefaultEdgeWeight(params)
+  weight: EdgeWeightFn = createEdgeWeight(params)
 ): void {
   const { cols, rows, active, edges, distance } = coarse;
   const n = cols * rows;
@@ -320,6 +422,8 @@ export function growSpanningTree(
   const nodeDir = new Int8Array(n).fill(-1);
   const nodeRun = new Int32Array(n);
   const nodeTarget = new Int32Array(n);
+  let maxDistance = 1;
+  for (let k = 0; k < n; k++) if (distance[k] > maxDistance) maxDistance = distance[k];
 
   const cellSize = grid.cellSize;
   const coarseTarget = () =>
@@ -367,6 +471,7 @@ export function growSpanningTree(
         runTarget: nodeTarget[k],
         fromDistance: distance[k],
         toDistance: distance[nk],
+        maxDistance,
         guideAxis: axis,
         rng,
       });
@@ -467,7 +572,7 @@ export function traceCycle(
 
   const rng = createSeededRandom(params.seed);
   const biasMap = guides && guides.length > 0 ? createDirectionBiasMap(guides, grid) : undefined;
-  growSpanningTree(coarse, grid, params, rng, biasMap, weight ?? createDefaultEdgeWeight(params));
+  growSpanningTree(coarse, grid, params, rng, biasMap, weight ?? createEdgeWeight(params));
 
   // Start at the fine cell nearest the bottom-left corner.
   const rootK = bottomLeftNode(coarse);

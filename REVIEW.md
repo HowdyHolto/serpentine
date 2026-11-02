@@ -162,3 +162,33 @@ Measured (vitest benchmark in `src/engine/__tests__/trace.test.ts`, 512×538 rec
 The ellipse's missing 7% is the ring of partial blocks along the edge, by construction (a coarse node needs all four cells inside). The 94 tests assert, for rect and ellipse at three cell sizes and seven seeds: every coverable cell visited exactly once, 4-connected closed cycle, no consecutive coincident waypoints, rect fill ratio exactly 1.0, closed loop joins mid-run, pieces cover every cell once, 45° legs are true diagonals, guides pull runs onto their axis, and no retry sweep for Trace.
 
 Known limits: frozen-waypoint regeneration still uses the walker to fill gaps (Trace does not yet respect frozen runs); a closed loop is rendered as a path whose first and last point coincide mid-run rather than an SVG `Z`, which is seamless with round caps and may show a hairline seam with flat caps on screen; editing the start waypoint of a closed loop opens it. A contour-parallel ("concentric") look can be added as another `EdgeWeightFn` that reads `fromDistance`/`toDistance`.
+
+## Concentric (2026-11-02, later)
+
+D9 is implemented as a **Concentric** toggle inside the Trace fill mode (`createConcentricEdgeWeight` in `src/engine/traceGenerator.ts`). It is an edge-weighting rule on the same spanning tree, so every Trace guarantee (100% fill, one non-crossing line, Closed Loop, Pieces, 45°) still holds, and `pathRenderer.ts` is untouched.
+
+How it works: `CoarseGrid.distance` is now an exact Euclidean distance transform over the coarse nodes (1 on the outer ring, then 1 + the distance to the nearest ring node; on a rectangle this is the same as the old 4-neighbour BFS, on a curve the contours are smooth offsets instead of diamonds). The concentric weight wraps the default weight and adds `CONTOUR_COST × strength × conformity × (crossing − 0.5)`, where `crossing` is how much the distance changes along the edge (0 along a contour, 1 straight across; on a curve the axis edge nearest the tangent scores lowest). `CONTOUR_COST` (2.5) beats turn + overshoot + jitter, so at full conformity Prim consumes a whole ring before it crosses to the next one. The tree becomes nested C-shaped rings joined by single radial edges, and the loop that hugs it reads as offset rings with a hairpin where each ring breaks. The straightness, Horizontal Bias and guide terms are still there, so segment length and H/V bias shape the result wherever conformity is below 1.
+
+Parameters (Fill section, shown only for Trace with Concentric on):
+
+- **Strength** (0..1, default 0.7): scales the contour term. 0 reproduces the plain Trace exactly; 1 follows the contours as strictly as the grid allows.
+- **Falloff** (0..1, default 0.5): conformity gradient over normalized depth (0 at the boundary, 1 at the deepest node). 0 = the same everywhere; 1 = faithful at the edge, falling linearly to no contour term at the center, where the plain Trace look takes over.
+- **Invert** (default off): measures depth from the center instead, so the path is faithful to the contours at the core and loosens toward the edge. An inner seed shape would be the same thing with the distance measured from the seed; not built.
+
+Measured (`src/engine/__tests__/concentric.test.ts`, 7 seeds, cell 14): "contour score" is the mean over steps between coarse blocks of 1 − |Δdistance|, by depth band.
+
+| Shape | Setting | Outer third | Middle | Inner third |
+|---|---|---|---|---|
+| Rect 512×538 | Concentric off | 53% | 61% | 49% |
+| Rect | strength 1, falloff 0 | 98% | 98% | 93% |
+| Rect | strength 1, falloff 1 | 98% | 97% | 78% |
+| Rect | strength 1, falloff 1, invert | 71% | 97% | 93% |
+| Rect | default 0.7 / 0.5 | 98% | 98% | 91% |
+| Ellipse 400 | Concentric off | 42% | 42% | 42% |
+| Ellipse | strength 1, falloff 0 | 65% | 67% | 78% |
+| Ellipse | strength 1, falloff 1 | 65% | 64% | 61% |
+| Ellipse | strength 1, falloff 1, invert | 49% | 62% | 78% |
+
+The 14 new tests assert those margins per seed for rect and ellipse (on > off by 0.3 / 0.15, falloff lowers the inner third, invert lowers the outer third), that strength 0 and Concentric off give byte-identical output to plain Trace, and the full Trace invariants (every coverable cell once, 4-connected closed cycle, rect fill ratio 1.0) for four concentric settings × 7 seeds × both shapes. 108 tests in all.
+
+Known limits: a 4-connected path can only follow a curved contour by alternating axis steps, so a circle's score tops out near 65% and its 45° zones show staircases or straight runs rather than arcs; the rings break (hairpin) at one point per ring, opposite where Prim entered it; conformity is linear in depth (no curve shaping); no seed shape yet. Screenshots of each setting are in the side-session notes folder under `concentric-screenshots/`.

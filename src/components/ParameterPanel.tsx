@@ -310,8 +310,41 @@ export function ParameterPanel({
                 onChange={(v) => update('tracePieces', v)}
               />
             )}
+            <Switch
+              label="Concentric"
+              checked={params.concentric}
+              onChange={(v) => update('concentric', v)}
+              title="Run along the boundary's offset contours as the path works inward"
+            />
+            {params.concentric && (
+              <>
+                <SliderControl
+                  label="Strength"
+                  value={params.concentricStrength}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => update('concentricStrength', v)}
+                />
+                <SliderControl
+                  label="Falloff"
+                  value={params.concentricFalloff}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => update('concentricFalloff', v)}
+                />
+                <Switch
+                  label="Invert"
+                  checked={params.concentricInvert}
+                  onChange={(v) => update('concentricInvert', v)}
+                  title="Faithful to the contours at the center, random at the edge"
+                />
+              </>
+            )}
             <div className="text-[10px]" style={{ color: colors.textFaint }}>
               Fills the whole boundary on every seed. Segment length, bias and guides shape the tree it traces.
+              {params.concentric && ' Falloff 0 follows the contours everywhere; 1 lets go toward the center.'}
             </div>
           </>
         ) : params.fillMode === 'multi-pass' ? (

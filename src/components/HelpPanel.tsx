@@ -122,7 +122,7 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
 
         <SectionTitle title="Fill Modes" />
         <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>
-          <span style={{ color: colors.accent }}>Trace</span> — grows a random tree over the boundary and traces around it: one non-crossing line that fills every cell on every seed. Closed Loop keeps it as a ring with no ends; Pieces cuts it into several paths.{' '}
+          <span style={{ color: colors.accent }}>Trace</span> — grows a random tree over the boundary and traces around it: one non-crossing line that fills every cell on every seed. Closed Loop keeps it as a ring with no ends; Pieces cuts it into several paths. Concentric makes the line follow the boundary's offset contours as it works inward, with Strength for how strictly, Falloff for how soon it goes random toward the center, and Invert to be faithful at the center instead.{' '}
           <span style={{ color: colors.accent }}>Continuous</span> — a wandering walker, single line, sparse.{' '}
           <span style={{ color: colors.accent }}>Multi-Pass</span> — several walker segments.{' '}
           <span style={{ color: colors.accent }}>Wicked Wise</span> — wall-hugging walker.

@@ -48,6 +48,14 @@ export interface GenerationParams {
   closedLoop: boolean;
   /** Trace only: cut the loop into this many open paths (1 = one path). */
   tracePieces: number;
+  /** Trace only: follow the boundary's offset contours (contour-parallel fill). */
+  concentric: boolean;
+  /** 0..1: how strongly edges prefer to run along iso-distance contours. */
+  concentricStrength: number;
+  /** 0..1: 0 = uniform conformity, 1 = faithful at the edge and fully random at the center. */
+  concentricFalloff: number;
+  /** Reverse the gradient: faithful at the center, random at the edge. */
+  concentricInvert: boolean;
 }
 
 export interface Waypoint {
@@ -121,4 +129,8 @@ export const DEFAULT_PARAMS: GenerationParams = {
   maxPasses: 10,
   closedLoop: false,
   tracePieces: 1,
+  concentric: false,
+  concentricStrength: 0.7,
+  concentricFalloff: 0.5,
+  concentricInvert: false,
 };
