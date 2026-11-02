@@ -25,3 +25,4 @@ dist-ssr
 # Local-only notes / scratch files (not for the public repo)
 *.pdf
 notes/
+.netlify

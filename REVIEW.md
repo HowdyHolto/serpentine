@@ -122,6 +122,18 @@ Quick wins A1 to A7 from above, plus two things found while doing them.
 
 Still open from the list: B (Hamiltonian engine), C (worker, tests, persistence), D (features). Continuous mode still self-traps (median 10%) by design of the walker; that is the engine rewrite.
 
+## Corner radius solver (2026-11-02, later)
+
+Holt noticed inner corners going sharp even with an outer radius. Geometry: the slider sets the centerline radius and maxes at half a cell, so the inner edge radius can never exceed half the gap. On a hairpin that is a physical limit (the legs are one gap apart). On an L-corner with empty space inside it was just the renderer not knowing what was around it.
+
+`pathRenderer.ts` now has `solveCornerRadii`: "Corner Radius" is the minimum, and "Ring Harmony" (0..1) lets each corner grow into the room it has. A corner with empty space inside grows until its arc would come within one cell of any other stroke (cap: two cells). A corner nested directly inside a matching corner takes that corner's radius plus one cell, so stacked turns render concentric. Hairpins stay at half a cell. Verified at stroke 26 / gap 6: no overlaps, inner edges rounded everywhere except hairpins. To get rounder hairpins the only lever is the gap: inner radius = gap / 2.
+
+Possible follow-ups: an "Inner Radius" control that drives both corner radius and the minimum gap from one number (what a laser or CNC person actually thinks in); a chamfered hairpin option that steps the lateral out by one extra cell where the neighbouring cell is free.
+
+## D9. Concentric / contour-parallel fill (idea from Holt, 2026-11-02)
+
+A fill mode where the path mimics the boundary (or an inner seed shape) as it works inward, still with hairpins and back-and-forth, with a conformity gradient: faithful to the contour near the edge, increasingly random toward the center, or the reverse from a seed outward. In the spanning-tree engine this is an edge-weighting rule, not a new generator: compute a distance transform over the coarse grid, weight edges by how well they run along iso-distance contours (perpendicular to the distance gradient), and scale that weight by conformity(distance). A seed shape is the same thing with the distance measured from the seed instead of the boundary. The Trace session has been asked to keep edge weights pluggable so this drops in.
+
 ## Suggested order
 
 1. Quick wins A1–A7 (restores trust in the output immediately; ship to Netlify).
