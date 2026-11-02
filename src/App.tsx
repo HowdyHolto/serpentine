@@ -8,6 +8,7 @@ import {
   PathStructure,
   RenderedPath,
   DirectionGuide,
+  Rock,
   WalkDirection,
   DEFAULT_PARAMS,
   usesTrace,
@@ -49,6 +50,8 @@ export default function App() {
   const [frozenParams, setFrozenParams] = useState<GenerationParams | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [guides, setGuides] = useState<DirectionGuide[]>([]);
+  const [rocks, setRocks] = useState<Rock[]>([]);
+  const [selectedRock, setSelectedRock] = useState<number | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [arrangements, setArrangements] = useState<Arrangement[]>(() => loadArrangements());
 
@@ -56,11 +59,13 @@ export default function App() {
   const frozenIndicesRef = useRef<Set<number>>(new Set());
   const frozenParamsRef = useRef<GenerationParams | null>(null);
   const guidesRef = useRef<DirectionGuide[]>([]);
+  const rocksRef = useRef<Rock[]>([]);
 
   waypointsRef.current = waypoints;
   frozenIndicesRef.current = frozenIndices;
   frozenParamsRef.current = frozenParams;
   guidesRef.current = guides;
+  rocksRef.current = rocks;
 
   const hasFrozen = frozenIndices.size > 0;
 
@@ -88,7 +93,7 @@ export default function App() {
 
   const generate = useCallback(() => {
     if (!boundary) return;
-    const result = generateSerpentine(boundary, params, guidesRef.current);
+    const result = generateSerpentine(boundary, params, guidesRef.current, rocksRef.current);
     setWaypoints(result.waypoints);
     setStructure(result.structure);
     // Use the params actually applied by the engine (may differ from input
@@ -259,6 +264,38 @@ export default function App() {
     setFrozenParams(null);
   }, []);
 
+  const rocksMatter = params.patternMode === 'contour' && params.contourSource !== 'noise';
+  const generateRef = useRef(generate);
+  generateRef.current = generate;
+  useEffect(() => {
+    if (rocksMatter && boundary && frozenIndicesRef.current.size === 0) generateRef.current();
+  }, [rocks, rocksMatter, boundary]);
+
+  const handleRockAdd = useCallback((rock: Rock) => {
+    setRocks((prev) => {
+      setSelectedRock(prev.length);
+      return [...prev, rock];
+    });
+  }, []);
+
+  const handleRockMove = useCallback((index: number, pos: Point) => {
+    setRocks((prev) => prev.map((r, i) => (i === index ? { ...r, x: pos.x, y: pos.y } : r)));
+  }, []);
+
+  const handleRockChange = useCallback((index: number, rock: Rock) => {
+    setRocks((prev) => prev.map((r, i) => (i === index ? rock : r)));
+  }, []);
+
+  const handleRockRemove = useCallback((index: number) => {
+    setRocks((prev) => prev.filter((_, i) => i !== index));
+    setSelectedRock((sel) => (sel === null || sel === index ? null : sel > index ? sel - 1 : sel));
+  }, []);
+
+  const handleClearRocks = useCallback(() => {
+    setRocks([]);
+    setSelectedRock(null);
+  }, []);
+
   const handleGuideAdd = useCallback((guide: DirectionGuide) => {
     setGuides((prev) => [...prev, guide]);
   }, []);
@@ -299,6 +336,7 @@ export default function App() {
         boundary,
         params: frozenParams ?? params,
         guides,
+        rocks,
         waypoints,
         structure,
         frozenIndices,
@@ -306,7 +344,7 @@ export default function App() {
       persistArrangements([item, ...arrangements]);
       setToastMessage(`Saved "${item.name}"`);
     },
-    [boundary, params, frozenParams, guides, waypoints, structure, frozenIndices, arrangements, persistArrangements]
+    [boundary, params, frozenParams, guides, rocks, waypoints, structure, frozenIndices, arrangements, persistArrangements]
   );
 
   const handleLoadArrangement = useCallback(
@@ -315,6 +353,8 @@ export default function App() {
       setBoundary(item.boundary);
       setParams(item.params);
       setGuides(item.guides);
+      setRocks(item.rocks);
+      setSelectedRock(null);
       setWaypoints(item.waypoints);
       setStructure(item.structure);
       setFrozenIndices(frozen);
@@ -396,6 +436,9 @@ export default function App() {
         case 'h':
           setCleanView((prev) => !prev);
           break;
+        case 'k':
+          setActiveTool('rock');
+          break;
         case 'l':
           setLibraryOpen((prev) => !prev);
           break;
@@ -425,6 +468,8 @@ export default function App() {
         onUnfreezeAll={handleUnfreezeAll}
         guideCount={guides.length}
         onClearGuides={handleClearGuides}
+        rockCount={rocks.length}
+        onClearRocks={handleClearRocks}
         onFitView={fitView}
         cleanView={cleanView}
         onToggleCleanView={() => setCleanView((prev) => !prev)}
@@ -471,6 +516,12 @@ export default function App() {
           onGuideAdd={handleGuideAdd}
           onGuideCycle={handleGuideCycle}
           onGuideRemove={handleGuideRemove}
+          rocks={rocks}
+          selectedRock={selectedRock}
+          onRockAdd={handleRockAdd}
+          onRockSelect={setSelectedRock}
+          onRockMove={handleRockMove}
+          onRockRemove={handleRockRemove}
           onCanvasSize={handleCanvasSize}
         />
         <ParameterPanel
@@ -479,6 +530,10 @@ export default function App() {
           onGenerate={handleGenerate}
           hasBoundary={!!boundary}
           hasFrozen={hasFrozen}
+          rocks={rocks}
+          selectedRock={selectedRock}
+          onRockChange={handleRockChange}
+          onSelectRock={setSelectedRock}
         />
       </div>
       <Toast

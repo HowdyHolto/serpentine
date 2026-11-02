@@ -8,6 +8,7 @@ import {
   EndCapPair,
   SegmentDescriptor,
   DirectionGuide,
+  Rock,
   usesTrace,
 } from '../types';
 import { OccupancyGrid } from './occupancyGrid';
@@ -693,11 +694,12 @@ export interface GenerationResult {
 function generateSerpentineOnce(
   boundary: BoundaryShape,
   params: GenerationParams,
-  guides?: DirectionGuide[]
+  guides?: DirectionGuide[],
+  rocks?: Rock[]
 ): { waypoints: Waypoint[]; structure: PathStructure; fillRatio: number } {
   if (usesTrace(params)) {
     // Spanning-tree Hamiltonian cycle: always a full fill, no walker, no retry.
-    return generateTrace(boundary, params, guides);
+    return generateTrace(boundary, params, guides, undefined, rocks);
   }
 
   const rng = createSeededRandom(params.seed);
@@ -840,10 +842,11 @@ function fillCompletionCandidates(
 export function generateSerpentine(
   boundary: BoundaryShape,
   params: GenerationParams,
-  guides?: DirectionGuide[]
+  guides?: DirectionGuide[],
+  rocks?: Rock[]
 ): GenerationResult {
   // Always try the user-requested params first.
-  const baseAttempt = generateSerpentineOnce(boundary, params, guides);
+  const baseAttempt = generateSerpentineOnce(boundary, params, guides, rocks);
 
   const wantsFullFill =
     params.targetFillPercent >= 100 &&
@@ -884,7 +887,7 @@ export function generateSerpentine(
       minGap: cand.gap,
       seed: cand.seed,
     };
-    const attempt = generateSerpentineOnce(boundary, tryParams, guides);
+    const attempt = generateSerpentineOnce(boundary, tryParams, guides, rocks);
     if (attempt.fillRatio > best.fillRatio) {
       best = {
         waypoints: attempt.waypoints,

@@ -65,6 +65,12 @@ export const colors = {
   guideBg: 'rgba(245, 158, 11, 0.08)',
   guideBorder: 'rgba(245, 158, 11, 0.3)',
   guideGhost: 'rgba(245, 158, 11, 0.2)',
+  rockFill: '#fb7185',
+  rockFillDip: 'rgba(251, 113, 133, 0.12)',
+  rockStroke: 'rgba(251, 113, 133, 0.9)',
+  rockSpreadRing: 'rgba(251, 113, 133, 0.25)',
+  rockNotice: 'rgba(251, 113, 133, 0.75)',
+  rockNoticeBg: 'rgba(251, 113, 133, 0.06)',
   guideNotice: 'rgba(245, 158, 11, 0.7)',
   guideNoticeBg: 'rgba(245, 158, 11, 0.05)',
 } as const;

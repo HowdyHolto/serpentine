@@ -2,6 +2,7 @@ import {
   BoundaryShape,
   DirectionGuide,
   GenerationParams,
+  Rock,
   PathStructure,
   Waypoint,
   DEFAULT_PARAMS,
@@ -22,6 +23,7 @@ export interface Arrangement {
   boundary: BoundaryShape;
   params: GenerationParams;
   guides: DirectionGuide[];
+  rocks: Rock[];
   waypoints: Waypoint[];
   structure: PathStructure | null;
   frozenIndices: number[];
@@ -33,6 +35,7 @@ export interface ArrangementState {
   boundary: BoundaryShape;
   params: GenerationParams;
   guides: DirectionGuide[];
+  rocks: Rock[];
   waypoints: Waypoint[];
   structure: PathStructure | null;
   frozenIndices: Set<number>;
@@ -51,6 +54,7 @@ export function createArrangement(name: string, state: ArrangementState): Arrang
     boundary: { ...state.boundary },
     params: { ...state.params },
     guides: state.guides.map((g) => ({ ...g })),
+    rocks: state.rocks.map((r) => ({ ...r })),
     waypoints: state.waypoints.map((w) => ({ ...w })),
     structure: state.structure
       ? {
@@ -94,6 +98,11 @@ export function normaliseArrangement(raw: unknown): Arrangement {
     if (!w || !isFiniteNumber(w.x) || !isFiniteNumber(w.y)) throw new Error('Arrangement has a bad waypoint');
   }
   const guides = Array.isArray(a.guides) ? a.guides.filter((g) => g && isFiniteNumber(g.x) && isFiniteNumber(g.y)) : [];
+  const rocks = Array.isArray(a.rocks)
+    ? a.rocks
+        .filter((r) => r && isFiniteNumber(r.x) && isFiniteNumber(r.y))
+        .map((r) => ({ x: r.x, y: r.y, elevation: isFiniteNumber(r.elevation) ? Math.max(-1, Math.min(1, r.elevation)) : 1 }))
+    : [];
   const frozen = Array.isArray(a.frozenIndices)
     ? a.frozenIndices.filter((i) => Number.isInteger(i) && i >= 0 && i < waypoints.length)
     : [];
@@ -106,6 +115,7 @@ export function normaliseArrangement(raw: unknown): Arrangement {
     boundary: b as BoundaryShape,
     params: { ...DEFAULT_PARAMS, ...(a.params as Partial<GenerationParams>) },
     guides,
+    rocks,
     waypoints,
     structure,
     frozenIndices: frozen,

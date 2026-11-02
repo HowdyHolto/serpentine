@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, Lock } from 'lucide-react';
-import { GenerationParams, TurnStyle, CapStyle, SegmentMode, FillMode, AngleMode, PatternMode, usesTrace } from '../types';
+import { GenerationParams, TurnStyle, CapStyle, SegmentMode, FillMode, AngleMode, PatternMode, ContourSource, Rock, usesTrace } from '../types';
 import { SliderControl } from './SliderControl';
 import { colors, gradients } from '../theme';
 
@@ -10,6 +10,10 @@ interface ParameterPanelProps {
   onGenerate: () => void;
   hasBoundary: boolean;
   hasFrozen: boolean;
+  rocks: Rock[];
+  selectedRock: number | null;
+  onRockChange: (index: number, rock: Rock) => void;
+  onSelectRock: (index: number | null) => void;
 }
 
 function PanelSection({
@@ -158,6 +162,10 @@ export function ParameterPanel({
   onGenerate,
   hasBoundary,
   hasFrozen,
+  rocks,
+  selectedRock,
+  onRockChange,
+  onSelectRock,
 }: ParameterPanelProps) {
   const update = <K extends keyof GenerationParams>(
     key: K,
@@ -241,6 +249,23 @@ export function ParameterPanel({
 
         {params.patternMode === 'contour' && (
           <>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Terrain</label>
+              <ToggleGroup
+                options={[
+                  { label: 'Noise', value: 'noise' as ContourSource },
+                  { label: 'Pond', value: 'pond' as ContourSource },
+                  { label: 'Garden', value: 'garden' as ContourSource },
+                ]}
+                value={params.contourSource}
+                onChange={(v) => update('contourSource', v)}
+              />
+              <div className="text-[10px] mt-1.5" style={{ color: colors.textFaint }}>
+                {params.contourSource === 'noise' && 'Seeded hills and valleys. The seed reshapes them.'}
+                {params.contourSource === 'pond' && 'Each rock (K) is a bump with its own elevation; ripples spread and merge where bumps overlap.'}
+                {params.contourSource === 'garden' && 'Rake lines radiate from each rock (K) and the edge until they meet along ridges.'}
+              </div>
+            </div>
             <SliderControl
               label="Strength"
               value={params.contourStrength}
@@ -249,14 +274,79 @@ export function ParameterPanel({
               step={0.05}
               onChange={(v) => update('contourStrength', v)}
             />
-            <SliderControl
-              label="Feature Size"
-              value={params.contourScale}
-              min={40}
-              max={600}
-              step={10}
-              onChange={(v) => update('contourScale', v)}
-            />
+            {(params.contourSource === 'noise' || params.contourNoiseMix > 0) && (
+              <SliderControl
+                label="Feature Size"
+                value={params.contourScale}
+                min={40}
+                max={600}
+                step={10}
+                onChange={(v) => update('contourScale', v)}
+              />
+            )}
+            {params.contourSource === 'pond' && (
+              <>
+                <SliderControl
+                  label="Rock Spread"
+                  value={params.rockSpread}
+                  min={20}
+                  max={600}
+                  step={10}
+                  onChange={(v) => update('rockSpread', v)}
+                />
+                <SliderControl
+                  label="Terrain Mix"
+                  value={params.contourNoiseMix}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => update('contourNoiseMix', v)}
+                />
+              </>
+            )}
+            {params.contourSource === 'garden' && (
+              <SliderControl
+                label="Edge Influence"
+                value={params.rockEdge}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={(v) => update('rockEdge', v)}
+              />
+            )}
+            {params.contourSource !== 'noise' && rocks.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1">
+                  {rocks.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => onSelectRock(i)}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-mono transition-all"
+                      style={selectedRock === i ? {
+                        background: colors.rockNoticeBg,
+                        color: colors.rockNotice,
+                        border: `1px solid ${colors.rockStroke}`,
+                      } : {
+                        color: colors.textDim,
+                        border: `1px solid ${colors.borderLight}`,
+                      }}
+                    >
+                      {i + 1}: {r.elevation > 0 ? '+' : ''}{r.elevation.toFixed(2)}
+                    </button>
+                  ))}
+                </div>
+                {selectedRock !== null && rocks[selectedRock] && (
+                  <SliderControl
+                    label={`Rock ${selectedRock + 1} Elevation`}
+                    value={rocks[selectedRock].elevation}
+                    min={-1}
+                    max={1}
+                    step={0.05}
+                    onChange={(v) => onRockChange(selectedRock, { ...rocks[selectedRock], elevation: v })}
+                  />
+                )}
+              </div>
+            )}
             <SliderControl
               label="Slope Response"
               value={params.contourSlope}

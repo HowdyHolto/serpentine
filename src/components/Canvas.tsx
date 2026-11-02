@@ -10,6 +10,7 @@ import {
   RenderedPath,
   ResizeEdge,
   DirectionGuide,
+  Rock,
   WalkDirection,
 } from '../types';
 import { getGroupIndices } from '../engine/constraintSolver';
@@ -43,6 +44,12 @@ interface CanvasProps {
   onToggleFreezeWaypoint: (index: number) => void;
   onFreezeWaypointsInRect: (rect: { x: number; y: number; width: number; height: number }) => void;
   guides: DirectionGuide[];
+  rocks: Rock[];
+  selectedRock: number | null;
+  onRockAdd: (rock: Rock) => void;
+  onRockSelect: (index: number | null) => void;
+  onRockMove: (index: number, pos: Point) => void;
+  onRockRemove: (index: number) => void;
   onGuideAdd: (guide: DirectionGuide) => void;
   onGuideCycle: (index: number) => void;
   onGuideRemove: (index: number) => void;
@@ -87,7 +94,7 @@ function hitTestResizeEdge(
 }
 
 function hitTestGuides(
-  guides: DirectionGuide[],
+  guides: Point[],
   worldPos: Point,
   hitRadius: number
 ): number | null {
@@ -136,6 +143,12 @@ export function Canvas({
   onGuideAdd,
   onGuideCycle,
   onGuideRemove,
+  rocks,
+  selectedRock,
+  onRockAdd,
+  onRockSelect,
+  onRockMove,
+  onRockRemove,
   onCanvasSize,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -153,6 +166,7 @@ export function Canvas({
   const [marqueeStart, setMarqueeStart] = useState<Point | null>(null);
   const [marqueeEnd, setMarqueeEnd] = useState<Point | null>(null);
   const [ghostGuidePos, setGhostGuidePos] = useState<Point | null>(null);
+  const [draggingRock, setDraggingRock] = useState<number | null>(null);
   const [penPoints, setPenPoints] = useState<Point[]>([]);
   const [penCursor, setPenCursor] = useState<Point | null>(null);
   const penPointsRef = useRef<Point[]>([]);
@@ -280,6 +294,25 @@ export function Canvas({
         return;
       }
 
+      if (activeTool === 'rock') {
+        const world = getWorldPos(e);
+        if (world) {
+          const hitRadius = 14 / transform.scale;
+          const idx = hitTestGuides(rocks, world, hitRadius);
+          if (idx !== null) {
+            if (e.shiftKey) {
+              onRockRemove(idx);
+            } else {
+              onRockSelect(idx);
+              setDraggingRock(idx);
+            }
+          } else {
+            onRockAdd({ x: world.x, y: world.y, elevation: 1 });
+          }
+        }
+        return;
+      }
+
       if (activeTool === 'pen') {
         const world = getWorldPos(e);
         if (world) {
@@ -337,13 +370,17 @@ export function Canvas({
         }
       }
     },
-    [activeTool, getWorldPos, onPanStart, spaceDown, showWaypoints, hoveredWpIndex, boundary, transform.scale, waypoints, onToggleFreezeWaypoint, guides, onGuideAdd, onGuideCycle, onGuideRemove, closePen]
+    [activeTool, getWorldPos, onPanStart, spaceDown, showWaypoints, hoveredWpIndex, boundary, transform.scale, waypoints, onToggleFreezeWaypoint, guides, onGuideAdd, onGuideCycle, onGuideRemove, closePen, rocks, onRockAdd, onRockSelect, onRockRemove]
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       const world = getWorldPos(e);
       if (activeTool === 'pen') setPenCursor(world);
+      if (draggingRock !== null && world) {
+        onRockMove(draggingRock, world);
+        return;
+      }
 
       if (marqueeStart) {
         if (world) setMarqueeEnd(world);
@@ -428,11 +465,15 @@ export function Canvas({
         setGhostGuidePos(null);
       }
     },
-    [marqueeStart, resizingEdge, boundary, draggingWpIndex, drawStart, getWorldPos, onPanMove, onWaypointMove, onBoundaryResize, activeTool, showWaypoints, waypoints, transform.scale]
+    [marqueeStart, resizingEdge, boundary, draggingWpIndex, drawStart, getWorldPos, onPanMove, onWaypointMove, onBoundaryResize, activeTool, showWaypoints, waypoints, transform.scale, draggingRock, onRockMove]
   );
 
   const handleMouseUp = useCallback(
     () => {
+      if (draggingRock !== null) {
+        setDraggingRock(null);
+        return;
+      }
       if (marqueeStart && marqueeEnd) {
         const minX = Math.min(marqueeStart.x, marqueeEnd.x);
         const minY = Math.min(marqueeStart.y, marqueeEnd.y);
@@ -479,7 +520,7 @@ export function Canvas({
         setDrawCurrent(null);
       }
     },
-    [marqueeStart, marqueeEnd, resizingEdge, draggingWpIndex, drawStart, drawCurrent, activeTool, onBoundaryCreate, onPanEnd, onFreezeWaypointsInRect, transform.scale]
+    [marqueeStart, marqueeEnd, resizingEdge, draggingWpIndex, drawStart, drawCurrent, activeTool, onBoundaryCreate, onPanEnd, onFreezeWaypointsInRect, transform.scale, draggingRock]
   );
 
   const drawPreview = drawStart && drawCurrent;
@@ -724,6 +765,31 @@ export function Canvas({
                 />
               );
             })}
+
+          {!cleanView && rocks.map((rock, i) => {
+            const r = (6 + 4 * Math.abs(rock.elevation)) / transform.scale;
+            const sw = 1.5 / transform.scale;
+            const selected = selectedRock === i;
+            return (
+              <g key={`rock-${i}`} transform={`translate(${rock.x}, ${rock.y})`}>
+                {selected && params.patternMode === 'contour' && params.contourSource === 'pond' && (
+                  <circle r={params.rockSpread} fill="none" stroke={colors.rockSpreadRing} strokeWidth={sw * 0.7} strokeDasharray={`${4 / transform.scale} ${4 / transform.scale}`} />
+                )}
+                {selected && (
+                  <circle r={r + 4 / transform.scale} fill="none" stroke={colors.accent} strokeWidth={sw} opacity={0.8} />
+                )}
+                <circle
+                  r={r}
+                  fill={rock.elevation >= 0 ? colors.rockFill : colors.rockFillDip}
+                  stroke={colors.rockStroke}
+                  strokeWidth={sw}
+                />
+                {rock.elevation < 0 && (
+                  <line x1={-r * 0.5} y1={0} x2={r * 0.5} y2={0} stroke={colors.rockStroke} strokeWidth={sw} />
+                )}
+              </g>
+            );
+          })}
 
           {!cleanView && guides.map((guide, i) => {
             const angle = GUIDE_DIR_ANGLES[guide.direction];

@@ -37,6 +37,7 @@ import {
   GridPoint,
   DirectionGuide,
   PathStructure,
+  Rock,
 } from '../types';
 import { OccupancyGrid } from './occupancyGrid';
 import { createSeededRandom, SeededRandom } from './random';
@@ -368,12 +369,17 @@ export function createDefaultEdgeWeight(params: GenerationParams): EdgeWeightFn 
 }
 
 /** The weight a pattern mode asks for: Concentric and Contour wrap the default, Serpentine is the default. */
-export function createEdgeWeight(params: GenerationParams, coarse: CoarseGrid): EdgeWeightFn {
+export function createEdgeWeight(
+  params: GenerationParams,
+  coarse: CoarseGrid,
+  grid?: OccupancyGrid,
+  rocks?: Rock[]
+): EdgeWeightFn {
   switch (params.patternMode) {
     case 'concentric':
       return createConcentricEdgeWeight(params, coarse);
     case 'contour':
-      return createContourEdgeWeight(params, coarse);
+      return createContourEdgeWeight(params, coarse, grid, rocks);
     default:
       return createDefaultEdgeWeight(params);
   }
@@ -573,17 +579,89 @@ export function contourConformity(t: number, slopeResponse: number, invert: bool
   return 1 - r + r * s;
 }
 
+/** World position of a coarse node's centre; without a grid, coarse units from the origin. */
+function coarseNodeWorld(coarse: CoarseGrid, grid: OccupancyGrid | undefined): (node: number) => { x: number; y: number } {
+  const { cols } = coarse;
+  return (k) => {
+    const C = k % cols;
+    const R = (k - C) / cols;
+    if (!grid) return { x: C, y: R };
+    return { x: grid.originX + (2 * C + 1) * grid.cellSize, y: grid.originY + (2 * R + 1) * grid.cellSize };
+  };
+}
+
 /**
- * Terrain ("contour") weights: the field weight over a seeded value-noise
- * height field whose hills are `contourScale` px apart, with conformity a
- * function of slope set by `contourSlope` and `contourInvert`. The result
- * reads like contour lines on a topographic map.
+ * The Contour terrain for a parameter set, as a scalar field over the coarse
+ * nodes. 'noise' is seeded value noise with hills `contourScale` px apart.
+ * 'pond' sums a bump per rock (height = elevation, fading over `rockSpread`
+ * px) over `contourNoiseMix` of that noise, so rings spread from each rock
+ * and merge where bumps overlap. 'garden' is the distance to the nearest
+ * rock, each rock's distance scaled by 2^-elevation, with the boundary edge
+ * counting as a rake centre weighted by `rockEdge`, so rings radiate from
+ * every rock until they collide along ridges.
  */
-export function createContourEdgeWeight(params: GenerationParams, coarse: CoarseGrid): EdgeWeightFn {
+export function contourField(
+  params: GenerationParams,
+  coarse: CoarseGrid,
+  grid?: OccupancyGrid,
+  rocks: Rock[] = []
+): ScalarField {
   const cellSize = params.strokeWidth + params.minGap;
   const scaleInCoarseSteps = Math.max(1, params.contourScale / (2 * cellSize));
   const noise = createValueNoise(params.seed, scaleInCoarseSteps);
-  const field = heightField(coarse, noise);
+  const source = params.contourSource;
+  if (source === 'noise' || (source === 'pond' && rocks.length === 0 && params.contourNoiseMix <= 0)) {
+    return heightField(coarse, noise);
+  }
+  const world = coarseNodeWorld(coarse, grid);
+  const { cols } = coarse;
+  if (source === 'pond') {
+    const spread = Math.max(1, params.rockSpread);
+    const mix = Math.min(1, Math.max(0, params.contourNoiseMix));
+    return heightField(coarse, (cx, cy) => {
+      const k = cy * cols + cx;
+      const { x, y } = world(k);
+      let v = 0;
+      for (const r of rocks) {
+        const d2 = (x - r.x) * (x - r.x) + (y - r.y) * (y - r.y);
+        v += r.elevation * Math.exp(-d2 / (spread * spread));
+      }
+      if (mix > 0) v += mix * (noise(cx, cy) - 0.5) * 2;
+      return v;
+    });
+  }
+  // garden
+  const blockPx = 2 * cellSize;
+  const edgeWeight = Math.min(1, Math.max(0, params.rockEdge));
+  return heightField(coarse, (cx, cy) => {
+    const k = cy * cols + cx;
+    const { x, y } = world(k);
+    let v = Infinity;
+    for (const r of rocks) {
+      const d = Math.hypot(x - r.x, y - r.y) / Math.pow(2, r.elevation);
+      if (d < v) v = d;
+    }
+    if (edgeWeight > 0) {
+      const dEdge = (coarse.distance[k] * blockPx) / edgeWeight;
+      if (dEdge < v) v = dEdge;
+    }
+    return v === Infinity ? 0 : v;
+  });
+}
+
+/**
+ * Terrain ("contour") weights: the field weight over the Contour terrain
+ * (see contourField), with conformity a function of slope set by
+ * `contourSlope` and `contourInvert`. The result reads like contour lines on
+ * a topographic map, or rake lines around rocks.
+ */
+export function createContourEdgeWeight(
+  params: GenerationParams,
+  coarse: CoarseGrid,
+  grid?: OccupancyGrid,
+  rocks?: Rock[]
+): EdgeWeightFn {
+  const field = contourField(params, coarse, grid, rocks);
   const slope = normalizedSlope(field, coarse);
   const response = params.contourSlope;
   const invert = params.contourInvert;
@@ -605,7 +683,7 @@ export function growSpanningTree(
   params: GenerationParams,
   rng: SeededRandom,
   biasMap?: DirectionBiasMap,
-  weight: EdgeWeightFn = createEdgeWeight(params, coarse)
+  weight: EdgeWeightFn = createEdgeWeight(params, coarse, grid)
 ): void {
   const { cols, rows, active, edges, distance } = coarse;
   const n = cols * rows;
@@ -750,7 +828,8 @@ export function traceCycle(
   boundary: BoundaryShape,
   params: GenerationParams,
   guides?: DirectionGuide[],
-  weight?: EdgeWeightFn
+  weight?: EdgeWeightFn,
+  rocks?: Rock[]
 ): TraceResult | null {
   const cellSize = params.strokeWidth + params.minGap;
   const grid = new OccupancyGrid(boundary, cellSize, { evenDimensions: true });
@@ -763,7 +842,7 @@ export function traceCycle(
 
   const rng = createSeededRandom(params.seed);
   const biasMap = guides && guides.length > 0 ? createDirectionBiasMap(guides, grid) : undefined;
-  growSpanningTree(coarse, grid, params, rng, biasMap, weight ?? createEdgeWeight(params, coarse));
+  growSpanningTree(coarse, grid, params, rng, biasMap, weight ?? createEdgeWeight(params, coarse, grid, rocks));
 
   // Start at the fine cell nearest the bottom-left corner.
   const rootK = bottomLeftNode(coarse);
@@ -918,7 +997,8 @@ export function generateTrace(
   boundary: BoundaryShape,
   params: GenerationParams,
   guides?: DirectionGuide[],
-  weight?: EdgeWeightFn
+  weight?: EdgeWeightFn,
+  rocks?: Rock[]
 ): { waypoints: Waypoint[]; structure: PathStructure; fillRatio: number } {
   const cellSize = params.strokeWidth + params.minGap;
   const empty = {
@@ -927,7 +1007,7 @@ export function generateTrace(
     fillRatio: 0,
   };
 
-  const traced = traceCycle(boundary, params, guides, weight);
+  const traced = traceCycle(boundary, params, guides, weight, rocks);
   if (!traced) return empty;
   const { grid, cycle, coverable, available } = traced;
 

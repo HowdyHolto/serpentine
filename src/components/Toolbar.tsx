@@ -15,6 +15,7 @@ import {
   Eye,
   EyeOff,
   Library,
+  Mountain,
 } from 'lucide-react';
 import { ActiveTool } from '../types';
 import { colors, gradients } from '../theme';
@@ -31,6 +32,8 @@ interface ToolbarProps {
   onUnfreezeAll: () => void;
   guideCount: number;
   onClearGuides: () => void;
+  rockCount: number;
+  onClearRocks: () => void;
   onFitView: () => void;
   cleanView: boolean;
   onToggleCleanView: () => void;
@@ -84,6 +87,8 @@ export function Toolbar({
   onUnfreezeAll,
   guideCount,
   onClearGuides,
+  rockCount,
+  onClearRocks,
   onFitView,
   cleanView,
   onToggleCleanView,
@@ -126,6 +131,9 @@ export function Toolbar({
         </ToolButton>
         <ToolButton active={activeTool === 'redirect'} onClick={() => onToolChange('redirect')} title="Direction guide (D)">
           <Compass size={15} />
+        </ToolButton>
+        <ToolButton active={activeTool === 'rock'} onClick={() => onToolChange('rock')} title="Rock: a point the Contour terrain reacts to (K)">
+          <Mountain size={15} />
         </ToolButton>
       </div>
 
@@ -221,6 +229,33 @@ export function Toolbar({
             style={{ color: colors.guideNotice }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background = colors.guideNoticeBg;
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = '';
+            }}
+          >
+            <Trash2 size={13} />
+          </button>
+        </>
+      )}
+
+      {rockCount > 0 && (
+        <>
+          <Divider />
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px]"
+            style={{ color: colors.rockNotice, background: colors.rockNoticeBg }}
+          >
+            <Mountain size={11} />
+            <span className="font-medium">{rockCount} rock{rockCount !== 1 ? 's' : ''}</span>
+          </div>
+          <button
+            onClick={onClearRocks}
+            title="Clear all rocks"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150"
+            style={{ color: colors.rockNotice }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = colors.rockNoticeBg;
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background = '';

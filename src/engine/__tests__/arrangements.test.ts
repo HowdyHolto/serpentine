@@ -31,6 +31,7 @@ function sample() {
     boundary: RECT,
     params,
     guides: [{ x: 50, y: 60, direction: 'up' }],
+    rocks: [{ x: 100, y: 100, elevation: 0.5 }],
     waypoints: result.waypoints,
     structure: result.structure,
     frozenIndices: new Set([3, 1]),

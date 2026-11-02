@@ -29,7 +29,9 @@ export type PatternMode = 'serpentine' | 'concentric' | 'contour';
 /** The engine behind a Serpentine pattern. Trace is the default; the rest are the legacy walkers. */
 export type FillMode = 'trace' | 'continuous' | 'multi-pass' | 'wicked-wise';
 export type AngleMode = 90 | 45 | 30;
-export type ActiveTool = 'select' | 'rectangle' | 'ellipse' | 'pen' | 'redirect' | 'fill';
+export type ActiveTool = 'select' | 'rectangle' | 'ellipse' | 'pen' | 'redirect' | 'fill' | 'rock';
+/** What the Contour terrain is made of: seeded noise, rocks as bumps in a pond, or rocks as rake centres in a garden. */
+export type ContourSource = 'noise' | 'pond' | 'garden';
 export type ResizeEdge = 'top' | 'bottom' | 'left' | 'right';
 export type WalkDirection = 'up' | 'down' | 'left' | 'right' | 'up-right' | 'up-left' | 'down-right' | 'down-left';
 
@@ -75,6 +77,13 @@ export interface GenerationParams {
   contourSlope: number;
   /** Contour: faithful on flat ground instead of steep. */
   contourInvert: boolean;
+  contourSource: ContourSource;
+  /** Pond: radius in px over which a rock's bump fades. */
+  rockSpread: number;
+  /** Garden, 0..1: how much the boundary edge counts as a rake centre (0 ignores it, 1 like a rock). */
+  rockEdge: number;
+  /** Pond, 0..1: how much of the noise terrain to blend under the rocks. */
+  contourNoiseMix: number;
   /**
    * 0..1: nudge every anchor with smooth seeded noise so lines lean and
    * wobble organically. Capped below half the gap, so lines never touch.
@@ -127,6 +136,17 @@ export interface RenderedPath {
   strokeWidth: number;
 }
 
+/**
+ * A rock: a point the Contour terrain reacts to. In a pond it is a bump of
+ * height `elevation` (-1..1, negative is a dip); in a garden it is a rake
+ * centre whose rings spread 2^elevation as fast as a neutral one.
+ */
+export interface Rock {
+  x: number;
+  y: number;
+  elevation: number;
+}
+
 export interface DirectionGuide {
   x: number;
   y: number;
@@ -167,4 +187,8 @@ export const DEFAULT_PARAMS: GenerationParams = {
   contourSlope: 0.6,
   contourInvert: false,
   jitter: 0,
+  contourSource: 'noise',
+  rockSpread: 150,
+  rockEdge: 0.5,
+  contourNoiseMix: 0,
 };
