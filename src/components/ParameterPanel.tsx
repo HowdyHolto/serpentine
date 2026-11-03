@@ -555,6 +555,63 @@ export function ParameterPanel({
         </div>
       </PanelSection>
 
+      <PanelSection title="Spacing">
+        <SliderControl
+          label="Line Gap"
+          value={params.minGap}
+          min={1}
+          max={50}
+          onChange={(v) => update('minGap', v)}
+        />
+        <div className="text-[10px]" style={{ color: colors.textFaint }}>
+          Cell size: {cellSize}px (width + gap)
+        </div>
+      </PanelSection>
+
+      <PanelSection title="Turns">
+        <div>
+          <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Style</label>
+          <ToggleGroup
+            options={[
+              { label: 'Rounded', value: 'rounded' as TurnStyle },
+              { label: 'Squared', value: 'squared' as TurnStyle },
+            ]}
+            value={params.turnStyle}
+            onChange={(v) => update('turnStyle', v)}
+          />
+        </div>
+        {params.turnStyle === 'rounded' && (
+          <>
+            <SliderControl
+              label="Corner Radius"
+              value={params.cornerRadius}
+              min={0}
+              max={Math.max(2, Math.floor(cellSize / 2))}
+              onChange={(v) => update('cornerRadius', v)}
+            />
+            <SliderControl
+              label="Ring Harmony"
+              value={params.ringHarmony}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => update('ringHarmony', v)}
+            />
+          </>
+        )}
+        <div>
+          <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Angle Mode</label>
+          <ToggleGroup
+            options={[
+              { label: '90\u00B0', value: '90' },
+              { label: '45\u00B0', value: '45' },
+            ]}
+            value={String(params.angleMode)}
+            onChange={(v) => update('angleMode', Number(v) as AngleMode)}
+          />
+        </div>
+      </PanelSection>
+
       <PanelSection title="Style" defaultOpen={false}>
         <Switch
           label="Length Gradient"
@@ -679,63 +736,6 @@ export function ParameterPanel({
             </div>
           </>
         )}
-      </PanelSection>
-
-      <PanelSection title="Turns">
-        <div>
-          <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Style</label>
-          <ToggleGroup
-            options={[
-              { label: 'Rounded', value: 'rounded' as TurnStyle },
-              { label: 'Squared', value: 'squared' as TurnStyle },
-            ]}
-            value={params.turnStyle}
-            onChange={(v) => update('turnStyle', v)}
-          />
-        </div>
-        {params.turnStyle === 'rounded' && (
-          <>
-            <SliderControl
-              label="Corner Radius"
-              value={params.cornerRadius}
-              min={0}
-              max={Math.max(2, Math.floor(cellSize / 2))}
-              onChange={(v) => update('cornerRadius', v)}
-            />
-            <SliderControl
-              label="Ring Harmony"
-              value={params.ringHarmony}
-              min={0}
-              max={1}
-              step={0.05}
-              onChange={(v) => update('ringHarmony', v)}
-            />
-          </>
-        )}
-        <div>
-          <label className="text-[10px] uppercase tracking-wider block mb-1.5" style={{ color: colors.textDim }}>Angle Mode</label>
-          <ToggleGroup
-            options={[
-              { label: '90\u00B0', value: '90' },
-              { label: '45\u00B0', value: '45' },
-            ]}
-            value={String(params.angleMode)}
-            onChange={(v) => update('angleMode', Number(v) as AngleMode)}
-          />
-        </div>
-      </PanelSection>
-
-      <PanelSection title="Spacing">
-        <SliderControl
-          label="Line Gap"
-          value={params.minGap}
-          min={1}
-          max={50}
-          onChange={(v) => update('minGap', v)}
-        />
-        <div className="text-[10px]" style={{ color: colors.textFaint }}>
-          Cell size: {cellSize}px (width + gap)
-        </div>
       </PanelSection>
 
       {params.patternMode !== 'rake' && (
