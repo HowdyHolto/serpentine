@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { BoundaryShape, DEFAULT_PARAMS, GenerationParams, Point, Rock } from '../../types';
-import { generateRakeLines, generateRake, edgeDistance, smooth, simplify, isoLines, pruneCrowded, RakeLine } from '../rake';
+import { generateRakeLines, generateRake, edgeDistance, smooth, simplify, isoLines, pruneCrowded, rakeLineWidth, RakeLine } from '../rake';
 import { generateSerpentine } from '../serpentineGenerator';
 import { renderPaths } from '../pathRenderer';
 import { pointInPolygon, makePolygonBoundary } from '../geometry';
@@ -125,6 +125,51 @@ describe('rake', () => {
     });
     const kept = pruneCrowded([ring(50, 0), ring(54, 1), ring(80, 2)], 10);
     expect(kept.map((l) => l.level)).toEqual([0, 2]);
+  });
+
+  it('measures crowding between stroke edges, so thin lines fit where full-width lines would not', () => {
+    const ring = (r: number, level: number): RakeLine => {
+      const points: Point[] = [];
+      for (let i = 0; i < 180; i++) {
+        const a = (i / 180) * Math.PI * 2;
+        points.push({ x: 200 + r * Math.cos(a), y: 200 + r * Math.sin(a) });
+      }
+      return { points, closed: true, level, t: level };
+    };
+    // Centres 6 apart, 3 of clear gap wanted: two 8-wide strokes overlap and the second ring goes; two 2-wide strokes leave 4 clear and both stay.
+    const wide = pruneCrowded([ring(50, 0), ring(56, 1)], 3, 3, 0, () => 8);
+    expect(wide).toHaveLength(1);
+    const thin = pruneCrowded([ring(50, 0), ring(56, 1)], 3, 3, 0, () => 2);
+    expect(thin).toHaveLength(2);
+    // A thin line next to a wide one: 5 of stroke between centres 6 apart leaves 1, under the 3 wanted.
+    const mixed = pruneCrowded([ring(50, 0), ring(56, 1)], 3, 3, 0, (l) => (l.level === 0 ? 8 : 2));
+    expect(mixed).toHaveLength(1);
+  });
+
+  it('Width Variation keeps more of a crowded pond, with no strokes overlapping', () => {
+    const rocks: Rock[] = [{ x: 180, y: 170, elevation: 1 }, { x: 455, y: 530, elevation: 1 }];
+    const base = params({ strokeWidth: 8, minGap: 6, contourSource: 'pond', rockSpread: 200, contourNoiseMix: 0.25, contourScale: 510, rakeMinLength: 1 });
+    const boundary: BoundaryShape = { type: 'rectangle', x: 0, y: 0, width: 628, height: 724 };
+    const length = (lines: RakeLine[]) => lines.reduce((sum, l) => {
+      const pts = l.closed ? [...l.points, l.points[0]] : l.points;
+      let s = 0;
+      for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      return sum + s;
+    }, 0);
+    const flat = generateRakeLines(boundary, { ...base, rakeWidthVariation: 0 }, rocks);
+    const varied = generateRakeLines(boundary, { ...base, rakeWidthVariation: 1 }, rocks);
+    expect(length(varied)).toBeGreaterThan(length(flat) * 1.15);
+    // Strokes never overlap: every pair of lines keeps at least half of each width between centres.
+    const all = varied.flatMap((l, i) => l.points.map((p) => ({ ...p, i, w: rakeLineWidth({ ...base, rakeWidthVariation: 1 }, l.t) })));
+    let overlaps = 0;
+    for (let a = 0; a < all.length; a += 2) {
+      for (let b = a + 1; b < all.length; b += 2) {
+        if (all[a].i === all[b].i) continue;
+        const d = Math.hypot(all[a].x - all[b].x, all[a].y - all[b].y);
+        if (d < (all[a].w + all[b].w) / 2 - 0.5) overlaps++;
+      }
+    }
+    expect(overlaps).toBe(0);
   });
 
   it('keeps a ring that wobbles around the crowding distance whole instead of dashing it', () => {

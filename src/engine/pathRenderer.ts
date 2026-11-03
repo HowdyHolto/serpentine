@@ -1,5 +1,6 @@
 import { Waypoint, GenerationParams, RenderedPath } from '../types';
 import { createSeededRandom } from './random';
+import { rakeLineWidth } from './rake';
 
 function splitAtSegmentBoundaries(waypoints: Waypoint[]): Waypoint[][] {
   const subPaths: Waypoint[][] = [];
@@ -364,13 +365,12 @@ function splitWithGaps(
 
 /**
  * Rake lines are smooth polylines already, one run per 'start'; a run whose
- * ends coincide is closed with Z. Width follows the line's level by
- * `rakeWidthVariation`, never above strokeWidth so the gap holds.
+ * ends coincide is closed with Z. Width follows the line's level
+ * (`rakeLineWidth`), never above strokeWidth so the gap holds.
  */
 function renderRakePaths(waypoints: Waypoint[], params: GenerationParams): RenderedPath[] {
   const results: RenderedPath[] = [];
   let runIdx = 0;
-  const v = Math.max(-1, Math.min(1, params.rakeWidthVariation));
   const fmt = (n: number) => Number(n.toFixed(2));
   let run: Waypoint[] = [];
   const flush = () => {
@@ -379,10 +379,7 @@ function renderRakePaths(waypoints: Waypoint[], params: GenerationParams): Rende
       const closed = run.length >= 4 && Math.hypot(first.x - last.x, first.y - last.y) < 0.5;
       const pts = closed ? run.slice(0, -1) : run;
       const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${fmt(p.x)} ${fmt(p.y)}`).join(' ') + (closed ? ' Z' : '');
-      const t = first.level ?? 0.5;
-      const thin = v > 0 ? 1 - t : t;
-      const factor = 1 - Math.abs(v) * thin * 0.8;
-      results.push({ d, strokeWidth: fmt(params.strokeWidth * factor), run: runIdx++ });
+      results.push({ d, strokeWidth: fmt(rakeLineWidth(params, first.level ?? 0.5)), run: runIdx++ });
     }
     run = [];
   };
