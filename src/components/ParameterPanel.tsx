@@ -347,6 +347,38 @@ export function ParameterPanel({
                   max={20}
                   onChange={(v) => update('rakeMinLength', v)}
                 />
+                {params.contourSource !== 'garden' && (
+                  <>
+                    <SliderControl
+                      label="Crowding"
+                      value={params.rakeCrowding}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onChange={(v) => update('rakeCrowding', v)}
+                    />
+                    <div className="text-[10px] -mt-1" style={{ color: colors.textFaint }}>
+                      Clear gap a line keeps before it is cut where lines bunch, as a share of Line Gap. 0 lets strokes touch.
+                    </div>
+                    <Switch
+                      label="Merge Pairs"
+                      checked={params.rakeMerge}
+                      onChange={(v) => update('rakeMerge', v)}
+                      title="Where lines bunch, a line may run over one neighbour as a thicker stroke, but never two."
+                    />
+                    <SliderControl
+                      label="Slope Limit"
+                      value={params.rakeSlopeLimit}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onChange={(v) => update('rakeSlopeLimit', v)}
+                    />
+                    <div className="text-[10px] -mt-1" style={{ color: colors.textFaint }}>
+                      Caps how steep the terrain can be, like sand settling, so lines never bunch tighter than a cell. 1 keeps every line whole; 0 draws the terrain as it is.
+                    </div>
+                  </>
+                )}
               </>
             )}
             {(params.contourSource === 'noise' || params.contourNoiseMix > 0) && (

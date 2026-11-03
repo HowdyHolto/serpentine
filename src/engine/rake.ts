@@ -278,15 +278,133 @@ export function generateRakeLines(boundary: BoundaryShape, params: GenerationPar
   }
   if (!(max > min)) return [];
   const meanGrad = gradN > 0 ? gradSum / gradN : 1;
-  const spacing = params.contourSource === 'garden' ? cell : Math.max(1e-9, meanGrad * cell);
+  const heightField = params.contourSource !== 'garden';
+  const spacing = heightField ? Math.max(1e-9, meanGrad * cell) : cell;
   const levels: number[] = [];
   for (let L = min + spacing / 2; L < max; L += spacing) levels.push(L);
-  let lines = isoLines(boundary, sample, step, levels).map((l) => ({ ...l, points: smooth(l.points, l.closed, 2) }));
-  if (params.contourSource !== 'garden') {
+  // Slope Limit caps the terrain's steepness at one level per cell, so lines never bunch tighter than a cell.
+  const slopeLimit = heightField ? Math.min(1, Math.max(0, params.rakeSlopeLimit ?? 0)) : 0;
+  const field = slopeLimit > 0 ? slopeLimitedSampler(boundary, sample, step, spacing / cell, slopeLimit, cell) : sample;
+  let lines = isoLines(boundary, field, step, levels).map((l) => ({ ...l, points: smooth(l.points, l.closed, 2) }));
+  if (heightField) {
     // Height-field lines bunch on steep ground; cut them where they would overlap.
-    lines = pruneCrowded(lines, params.minGap * 0.5, cell * 1.5, 0, (l) => rakeLineWidth(params, l.t));
+    const crowding = Math.min(1, Math.max(0, params.rakeCrowding ?? 0.5));
+    lines = pruneCrowded(lines, params.minGap * crowding, cell * 1.5, 0, (l) => rakeLineWidth(params, l.t), params.rakeMerge ?? false);
   }
   return lines.map((l) => ({ ...l, points: simplify(l.points, 0.25) }));
+}
+
+/**
+ * The field with its steepness capped at `k` (field units per px), like
+ * sand settling to its angle of repose: the lower envelope of cones of
+ * slope k erodes the summits, the upper envelope fills the pits, and the
+ * two are averaged so hills and valleys are treated alike; the result
+ * cannot be steeper than k, so its iso-lines are never closer than the
+ * level spacing over k. Computed on a grid no finer than half a cell
+ * (and no more than about 200k nodes, so a small cell on a big canvas
+ * stays interactive) with a margin, box blurred by about a cell to round
+ * the creases where cones meet, and blended with the raw field by
+ * `amount`.
+ */
+export function slopeLimitedSampler(
+  boundary: BoundaryShape,
+  sample: Sampler,
+  minStep: number,
+  k: number,
+  amount: number,
+  cell: number
+): Sampler {
+  const step = Math.max(minStep, cell / 2, Math.sqrt((boundary.width * boundary.height) / 200000));
+  const margin = Math.ceil((cell * 2) / step);
+  const nx = Math.max(2, Math.ceil(boundary.width / step) + 1) + 2 * margin;
+  const ny = Math.max(2, Math.ceil(boundary.height / step) + 1) + 2 * margin;
+  const x0 = boundary.x - margin * step, y0 = boundary.y - margin * step;
+  const raw = new Float64Array(nx * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) raw[j * nx + i] = sample(x0 + i * step, y0 + j * step);
+  const limited = boxBlur(limitSlope(raw, nx, ny, step, k), nx, ny, Math.max(1, Math.round(cell / step)), 3);
+  const grid = new Float64Array(nx * ny);
+  for (let i = 0; i < grid.length; i++) grid[i] = raw[i] * (1 - amount) + limited[i] * amount;
+  return (x, y) => {
+    const fx = Math.min(nx - 1.000001, Math.max(0, (x - x0) / step));
+    const fy = Math.min(ny - 1.000001, Math.max(0, (y - y0) / step));
+    const i = Math.floor(fx), j = Math.floor(fy), tx = fx - i, ty = fy - j;
+    const a = grid[j * nx + i], b = grid[j * nx + i + 1], c = grid[(j + 1) * nx + i], d = grid[(j + 1) * nx + i + 1];
+    return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+  };
+}
+
+/**
+ * Cap a grid field's slope at `k` per px: the mean of its lower and upper
+ * envelopes of Euclidean cones. Each envelope is found by seed
+ * propagation: every cell starts as its own seed, sweeps hand each cell
+ * its neighbours' seeds, and a cell keeps whichever seed costs least
+ * (the seed's value plus k times the straight-line distance to it).
+ */
+export function limitSlope(grid: Float64Array, nx: number, ny: number, step: number, k: number): Float64Array {
+  const n = nx * ny;
+  const envelope = (sign: 1 | -1): Float64Array => {
+    const h = new Float64Array(n);
+    for (let i = 0; i < n; i++) h[i] = sign * grid[i];
+    const seed = new Int32Array(n);
+    const cost = new Float64Array(n);
+    for (let i = 0; i < n; i++) { seed[i] = i; cost[i] = h[i]; }
+    const costOf = (i: number, s: number) => {
+      const dx = (i % nx) - (s % nx), dy = Math.floor(i / nx) - Math.floor(s / nx);
+      return h[s] + k * step * Math.sqrt(dx * dx + dy * dy);
+    };
+    const offs = [[-1, 0], [0, -1], [-1, -1], [1, -1], [-2, -1], [2, -1], [-1, -2], [1, -2]];
+    let changed = true;
+    for (let pass = 0; pass < 8 && changed; pass++) {
+      changed = false;
+      const fwd = pass % 2 === 0;
+      for (let jj = 0; jj < ny; jj++) {
+        const j = fwd ? jj : ny - 1 - jj;
+        for (let ii = 0; ii < nx; ii++) {
+          const i = fwd ? ii : nx - 1 - ii;
+          const idx = j * nx + i;
+          for (const [ox, oy] of offs) {
+            const x = i + (fwd ? ox : -ox), y = j + (fwd ? oy : -oy);
+            if (x < 0 || y < 0 || x >= nx || y >= ny) continue;
+            const s = seed[y * nx + x];
+            if (s === seed[idx]) continue;
+            const c = costOf(idx, s);
+            if (c < cost[idx] - 1e-12) { cost[idx] = c; seed[idx] = s; changed = true; }
+          }
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) cost[i] *= sign;
+    return cost;
+  };
+  const lower = envelope(1), upper = envelope(-1);
+  const out = new Float64Array(n);
+  for (let i = 0; i < n; i++) out[i] = (lower[i] + upper[i]) / 2;
+  return out;
+}
+
+/** Separable box blur of `radius` cells, `passes` times (three passes is close to a Gaussian). Never steepens a field. */
+export function boxBlur(grid: Float64Array, nx: number, ny: number, radius: number, passes: number): Float64Array {
+  let g = grid;
+  for (let pass = 0; pass < passes; pass++) {
+    const h = new Float64Array(nx * ny);
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        let sum = 0, count = 0;
+        for (let d = -radius; d <= radius; d++) { const x = i + d; if (x < 0 || x >= nx) continue; sum += g[j * nx + x]; count++; }
+        h[j * nx + i] = sum / count;
+      }
+    }
+    const v = new Float64Array(nx * ny);
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        let sum = 0, count = 0;
+        for (let d = -radius; d <= radius; d++) { const y = j + d; if (y < 0 || y >= ny) continue; sum += h[y * nx + i]; count++; }
+        v[j * nx + i] = sum / count;
+      }
+    }
+    g = v;
+  }
+  return g;
 }
 
 /**
@@ -305,42 +423,59 @@ export function generateRakeLines(boundary: BoundaryShape, params: GenerationPar
  * With `width`, distances are between stroke edges rather than centres:
  * `minDist` and `touch` are then the clear gap to keep, and a line that
  * is drawn thin is cut only where a thin line would not fit.
+ *
+ * With `merge`, a crowded point is allowed where it overlaps one kept
+ * line that is not itself merged with another, so two strokes may run
+ * together as one thicker stroke but never three; a point almost on top
+ * of a kept line (centres closer than a quarter of their widths) is cut.
  */
 export function pruneCrowded(
   lines: RakeLine[],
   minDist: number,
   bridge: number = minDist,
   touch = 0,
-  width?: (line: RakeLine) => number
+  width?: (line: RakeLine) => number,
+  merge = false
 ): RakeLine[] {
+  type Kept = { x: number; y: number; w: number; line: number; merged: boolean };
   const widthOf = (line: RakeLine) => (width ? width(line) : 0);
   const maxWidth = lines.reduce((m, l) => Math.max(m, widthOf(l)), 0);
   // Centre distance within which two strokes can still be closer than minDist.
   const reach = minDist + maxWidth;
   const bucket = Math.max(1e-6, reach);
-  const hash = new Map<string, Array<Point & { w: number }>>();
+  const hash = new Map<string, Kept[]>();
   const keyOf = (x: number, y: number) => `${Math.floor(x / bucket)},${Math.floor(y / bucket)}`;
-  /** Smallest edge-to-edge gap to a kept line within minDist, or Infinity. */
-  const nearest = (p: Point, w: number): number => {
+  /** Kept points whose stroke edge is within minDist of this point's. */
+  const close = (p: Point, w: number): Kept[] => {
     const bx = Math.floor(p.x / bucket), by = Math.floor(p.y / bucket);
-    let best = Infinity;
+    const out: Kept[] = [];
     for (let j = by - 1; j <= by + 1; j++) {
       for (let i = bx - 1; i <= bx + 1; i++) {
         const list = hash.get(`${i},${j}`);
         if (!list) continue;
-        for (const q of list) {
-          const d = Math.hypot(q.x - p.x, q.y - p.y) - (q.w + w) / 2;
-          if (d < best) best = d;
-        }
+        for (const q of list) if (Math.hypot(q.x - p.x, q.y - p.y) - (q.w + w) / 2 < minDist) out.push(q);
       }
     }
-    return best < minDist ? best : Infinity;
+    return out;
   };
+  /** Smallest edge-to-edge gap to a kept line within minDist, or Infinity. */
+  const nearest = (p: Point, w: number, near: Kept[]): number => {
+    let best = Infinity;
+    for (const q of near) {
+      const d = Math.hypot(q.x - p.x, q.y - p.y) - (q.w + w) / 2;
+      if (d < best) best = d;
+    }
+    return best;
+  };
+  let nextLine = 0;
   const accept = (pts: Point[], w: number) => {
+    const line = nextLine++;
     for (const p of pts) {
+      const near = merge ? close(p, w).filter((q) => q.line !== line) : [];
+      for (const q of near) q.merged = true;
       const k = keyOf(p.x, p.y);
       const list = hash.get(k);
-      const entry = { x: p.x, y: p.y, w };
+      const entry: Kept = { x: p.x, y: p.y, w, line, merged: near.length > 0 };
       if (list) list.push(entry);
       else hash.set(k, [entry]);
     }
@@ -350,8 +485,19 @@ export function pruneCrowded(
   for (const line of order) {
     const pts = line.closed ? [...line.points, line.points[0]] : line.points;
     const w = widthOf(line);
-    const dist = pts.map((p) => nearest(p, w));
-    const flags = dist.map((d) => d < minDist);
+    const near = pts.map((p) => close(p, w));
+    const dist = pts.map((p, i) => nearest(p, w, near[i]));
+    /** Strokes would overlap (or, merging, sit almost on top of each other). */
+    const touching = pts.map((p, i) => {
+      if (!merge) return dist[i] < touch;
+      return near[i].some((q) => Math.hypot(q.x - p.x, q.y - p.y) < (q.w + w) / 4);
+    });
+    const flags = dist.map((d, i) => {
+      if (!(d < minDist)) return false;
+      if (!merge) return true;
+      // May merge with one unmerged neighbour; a second line, a merged one, or sitting on top always cuts.
+      return touching[i] || near[i].some((q) => q.merged) || new Set(near[i].map((q) => q.line)).size >= 2;
+    });
     // Mostly crowded: this is the next ring in, a hair too close all round. Drop it whole.
     let total = 0, crowdedLen = 0;
     for (let i = 1; i < pts.length; i++) {
@@ -370,9 +516,9 @@ export function pruneCrowded(
         j++;
       }
       const interior = i > 0 && j < pts.length - 1;
-      let touching = false;
-      for (let k = i; k <= j && !touching; k++) if (dist[k] < touch) touching = true;
-      if (interior && len < bridge && !touching) for (let k = i; k <= j; k++) flags[k] = false;
+      let touches = false;
+      for (let k = i; k <= j && !touches; k++) if (touching[k]) touches = true;
+      if (interior && len < bridge && !touches) for (let k = i; k <= j; k++) flags[k] = false;
       i = j + 1;
     }
     let run: Point[] = [];

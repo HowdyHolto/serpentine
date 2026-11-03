@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { BoundaryShape, DEFAULT_PARAMS, GenerationParams, Point, Rock } from '../../types';
-import { generateRakeLines, generateRake, edgeDistance, smooth, simplify, isoLines, pruneCrowded, rakeLineWidth, RakeLine } from '../rake';
+import { generateRakeLines, generateRake, edgeDistance, smooth, simplify, isoLines, pruneCrowded, rakeLineWidth, limitSlope, RakeLine } from '../rake';
 import { generateSerpentine } from '../serpentineGenerator';
+import { createSeededRandom } from '../random';
 import { renderPaths } from '../pathRenderer';
 import { pointInPolygon, makePolygonBoundary } from '../geometry';
 
@@ -170,6 +171,93 @@ describe('rake', () => {
       }
     }
     expect(overlaps).toBe(0);
+  });
+
+  it('Crowding 0 lets strokes touch and keeps more of a crowded pond, still with no overlaps', () => {
+    const rocks: Rock[] = [{ x: 180, y: 170, elevation: 1 }, { x: 455, y: 530, elevation: 1 }];
+    const base = params({ strokeWidth: 8, minGap: 6, contourSource: 'pond', rockSpread: 200, contourNoiseMix: 0.25, contourScale: 510, rakeMinLength: 1 });
+    const boundary: BoundaryShape = { type: 'rectangle', x: 0, y: 0, width: 628, height: 724 };
+    const length = (lines: RakeLine[]) => lines.reduce((sum, l) => {
+      const pts = l.closed ? [...l.points, l.points[0]] : l.points;
+      let s = 0;
+      for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      return sum + s;
+    }, 0);
+    const halfGap = generateRakeLines(boundary, { ...base, rakeCrowding: 0.5 }, rocks);
+    const touching = generateRakeLines(boundary, { ...base, rakeCrowding: 0 }, rocks);
+    expect(length(touching)).toBeGreaterThan(length(halfGap) * 1.2);
+    // Pieces of one cut line meet end to end across the cut, so compare by level, not by piece.
+    const all = touching.flatMap((l) => l.points.map((p) => ({ ...p, i: l.level })));
+    let overlaps = 0;
+    for (let a = 0; a < all.length; a += 2) {
+      for (let b = a + 1; b < all.length; b += 2) {
+        if (all[a].i === all[b].i) continue;
+        // Crowding is judged between sampled points about a pixel apart, so allow that much.
+        if (Math.hypot(all[a].x - all[b].x, all[a].y - all[b].y) < base.strokeWidth - 1) overlaps++;
+      }
+    }
+    expect(overlaps).toBe(0);
+  });
+
+  it('Merge Pairs lets two strokes run together but never three', () => {
+    const ring = (r: number, level: number): RakeLine => {
+      const points: Point[] = [];
+      for (let i = 0; i < 180; i++) {
+        const a = (i / 180) * Math.PI * 2;
+        points.push({ x: 200 + r * Math.cos(a), y: 200 + r * Math.sin(a) });
+      }
+      return { points, closed: true, level, t: level };
+    };
+    // Four 8-wide rings 5 apart: every neighbour overlaps by 3.
+    const rings = [ring(50, 0), ring(55, 1), ring(60, 2), ring(65, 3)];
+    const plain = pruneCrowded(rings, 3, 3, 0, () => 8, false).map((l) => l.level);
+    expect(plain).toEqual([0, 3]);
+    const merged = pruneCrowded(rings, 3, 3, 0, () => 8, true).map((l) => l.level);
+    expect(merged).toEqual([0, 1]);
+  });
+
+  it('limitSlope caps a field at the given slope without leaving its range', () => {
+    const nx = 48, ny = 40, step = 2, k = 0.03;
+    const grid = new Float64Array(nx * ny);
+    const rng = createSeededRandom(5);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) grid[j * nx + i] = rng.next() + (i > nx / 2 ? 3 : 0);
+    const out = limitSlope(grid, nx, ny, step, k);
+    let steepest = 0, min = Infinity, max = -Infinity;
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const v = out[j * nx + i];
+        min = Math.min(min, v);
+        max = Math.max(max, v);
+        if (i + 1 < nx) steepest = Math.max(steepest, Math.abs(out[j * nx + i + 1] - v) / step);
+        if (j + 1 < ny) steepest = Math.max(steepest, Math.abs(out[(j + 1) * nx + i] - v) / step);
+      }
+    }
+    expect(steepest).toBeLessThanOrEqual(k * 1.05);
+    expect(min).toBeGreaterThanOrEqual(0);
+    expect(max).toBeLessThanOrEqual(4);
+    // A step of 3 across the middle is now a ramp of slope k: 50 px wide.
+    const row = ny >> 1;
+    expect(out[row * nx + nx - 1] - out[row * nx]).toBeGreaterThan(1);
+  });
+
+  it('Slope Limit keeps Noise lines whole where the raw terrain dashes them', () => {
+    const boundary: BoundaryShape = { type: 'rectangle', x: 0, y: 0, width: 900, height: 770 };
+    const base = params({ seed: 383915, strokeWidth: 6, minGap: 6, contourSource: 'noise', contourScale: 600, rakeMinLength: 1, rakeWidthVariation: 0.05 });
+    const cell = 12;
+    const length = (l: RakeLine) => {
+      const pts = l.closed ? [...l.points, l.points[0]] : l.points;
+      let s = 0;
+      for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      return s;
+    };
+    const raw = generateRakeLines(boundary, { ...base, rakeSlopeLimit: 0 }, []);
+    const limited = generateRakeLines(boundary, { ...base, rakeSlopeLimit: 1 }, []);
+    const short = (lines: RakeLine[]) => lines.filter((l) => length(l) < 3 * cell).length;
+    const total = (lines: RakeLine[]) => lines.reduce((s, l) => s + length(l), 0);
+    expect(short(raw)).toBeGreaterThan(10);
+    expect(short(limited)).toBeLessThanOrEqual(short(raw) / 5);
+    expect(limited.length).toBeLessThan(raw.length / 2);
+    expect(total(limited)).toBeGreaterThan(total(raw) * 0.85);
   });
 
   it('keeps a ring that wobbles around the crowding distance whole instead of dashing it', () => {

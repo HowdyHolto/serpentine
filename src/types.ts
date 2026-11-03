@@ -132,6 +132,12 @@ export interface GenerationParams {
   rakeWidthVariation: number;
   /** Rake: drop lines shorter than this many cells (strays left where lines crowd at a junction). */
   rakeMinLength: number;
+  /** Rake (Pond, Noise), 0..1: clear gap a line keeps before it is cut where lines bunch, as a share of Line Gap; 0 lets strokes touch. */
+  rakeCrowding: number;
+  /** Rake (Pond, Noise): where lines bunch, a line may overlap one neighbour but never two. */
+  rakeMerge: boolean;
+  /** Rake (Pond, Noise), 0..1: how far the terrain's steepness is capped so lines never bunch tighter than a cell; 0 draws it as it is. */
+  rakeSlopeLimit: number;
   /**
    * 0..1: nudge every anchor with smooth seeded noise so lines lean and
    * wobble organically. Capped below half the gap, so lines never touch.
@@ -275,5 +281,8 @@ export const DEFAULT_PARAMS: GenerationParams = {
   contourNoiseMix: 0,
   rakeWidthVariation: 0,
   rakeMinLength: 3,
+  rakeCrowding: 0.5,
+  rakeMerge: false,
+  rakeSlopeLimit: 0,
   style: DEFAULT_STYLE,
 };
