@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { getGroupIndices } from '../engine/constraintSolver';
 import { Rulers, RULER_SIZE, PX_PER_MM } from './Rulers';
-import { makePolygonBoundary, polygonPathData, resizeBoundary } from '../engine/geometry';
+import { dragRect, makePolygonBoundary, polygonPathData, resizeBoundary } from '../engine/geometry';
 import { parseLength } from '../engine/units';
 import { HelpPanel } from './HelpPanel';
 import { colors } from '../theme';
@@ -184,6 +184,8 @@ export function Canvas({
   const [drawCurrent, setDrawCurrent] = useState<Point | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const [shiftDown, setShiftDown] = useState(false);
+  // Command (Control on Windows and Linux): draw a boundary from its centre.
+  const [cmdDown, setCmdDown] = useState(false);
   const [isPanDragging, setIsPanDragging] = useState(false);
   const [hoveredWpIndex, setHoveredWpIndex] = useState<number | null>(null);
   const [draggingWpIndex, setDraggingWpIndex] = useState<number | null>(null);
@@ -277,6 +279,7 @@ export function Canvas({
         setSpaceDown(true);
       }
       if (e.key === 'Shift') setShiftDown(true);
+      if (e.key === 'Meta' || e.key === 'Control') setCmdDown(true);
       if ((e.target as HTMLElement).matches('input, textarea')) return;
       if (e.key === 'Enter' && penPointsRef.current.length >= 3) {
         e.preventDefault();
@@ -293,12 +296,20 @@ export function Canvas({
         setIsPanDragging(false);
       }
       if (e.key === 'Shift') setShiftDown(false);
+      if (e.key === 'Meta' || e.key === 'Control') setCmdDown(false);
+    };
+    // Switching windows with a modifier held never delivers its key-up.
+    const onBlur = () => {
+      setShiftDown(false);
+      setCmdDown(false);
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, [closePen]);
 
@@ -478,6 +489,9 @@ export function Canvas({
       onPanMove(e);
 
       if (drawStart) {
+        // The event carries the true modifier state, in case a key-up was missed.
+        if (e.shiftKey !== shiftDown) setShiftDown(e.shiftKey);
+        if ((e.metaKey || e.ctrlKey) !== cmdDown) setCmdDown(e.metaKey || e.ctrlKey);
         if (world) {
           setDrawCurrent(world);
         }
@@ -516,7 +530,7 @@ export function Canvas({
         setGhostGuidePos(null);
       }
     },
-    [marqueeStart, resizingEdge, boundary, draggingWpIndex, drawStart, getWorldPos, onPanMove, onWaypointMove, onBoundaryResize, activeTool, showWaypoints, waypoints, transform.scale, draggingRock, onRockMove]
+    [marqueeStart, resizingEdge, boundary, draggingWpIndex, drawStart, getWorldPos, onPanMove, onWaypointMove, onBoundaryResize, activeTool, showWaypoints, waypoints, transform.scale, draggingRock, onRockMove, shiftDown, cmdDown]
   );
 
   const handleMouseUp = useCallback(
@@ -552,10 +566,7 @@ export function Canvas({
       setIsPanDragging(false);
 
       if (drawStart && drawCurrent) {
-        const x = Math.min(drawStart.x, drawCurrent.x);
-        const y = Math.min(drawStart.y, drawCurrent.y);
-        const w = Math.abs(drawCurrent.x - drawStart.x);
-        const h = Math.abs(drawCurrent.y - drawStart.y);
+        const { x, y, width: w, height: h } = dragRect(drawStart, drawCurrent, { square: shiftDown, fromCenter: cmdDown });
 
         if (w > 20 && h > 20) {
           onBoundaryCreate({
@@ -571,14 +582,17 @@ export function Canvas({
         setDrawCurrent(null);
       }
     },
-    [marqueeStart, marqueeEnd, resizingEdge, draggingWpIndex, drawStart, drawCurrent, activeTool, onBoundaryCreate, onPanEnd, onFreezeWaypointsInRect, transform.scale, draggingRock]
+    [marqueeStart, marqueeEnd, resizingEdge, draggingWpIndex, drawStart, drawCurrent, activeTool, onBoundaryCreate, onPanEnd, onFreezeWaypointsInRect, transform.scale, draggingRock, shiftDown, cmdDown]
   );
 
   const drawPreview = drawStart && drawCurrent;
-  const previewX = drawPreview ? Math.min(drawStart.x, drawCurrent.x) : 0;
-  const previewY = drawPreview ? Math.min(drawStart.y, drawCurrent.y) : 0;
-  const previewW = drawPreview ? Math.abs(drawCurrent.x - drawStart.x) : 0;
-  const previewH = drawPreview ? Math.abs(drawCurrent.y - drawStart.y) : 0;
+  const previewBox = drawPreview
+    ? dragRect(drawStart, drawCurrent, { square: shiftDown, fromCenter: cmdDown })
+    : { x: 0, y: 0, width: 0, height: 0 };
+  const previewX = previewBox.x;
+  const previewY = previewBox.y;
+  const previewW = previewBox.width;
+  const previewH = previewBox.height;
 
   const isMarqueeActive = marqueeStart !== null && marqueeEnd !== null;
   const marqueeX = isMarqueeActive ? Math.min(marqueeStart.x, marqueeEnd.x) : 0;

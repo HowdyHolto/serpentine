@@ -93,6 +93,9 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
         <ShortcutRow keys="V" label="Select tool" />
         <ShortcutRow keys="R" label="Rectangle boundary" />
         <ShortcutRow keys="E" label="Ellipse boundary" />
+        <ShortcutRow keys="Shift+Drag" label="Square or circle" />
+        <ShortcutRow keys="Cmd+Drag" label="Draw from centre" />
+        <ShortcutRow keys="Shift+Cmd+Drag" label="Square or circle from centre" />
         <ShortcutRow keys="P" label="Pen tool" />
         <ShortcutRow keys="D" label="Direction guide" />
 

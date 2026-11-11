@@ -71,3 +71,33 @@ export function resizeBoundary(boundary: BoundaryShape, size: { width?: number; 
   }
   return { ...boundary, x: cx - width / 2, y: cy - height / 2, width, height };
 }
+
+export interface DragRectModifiers {
+  /** Constrain to a square (a circle for the ellipse tool). */
+  square: boolean;
+  /** The press point is the centre, not a corner. */
+  fromCenter: boolean;
+}
+
+/**
+ * The box a drag from `start` to `current` draws. Constrained, the side is
+ * the larger of the two drag distances and the box grows toward the cursor's
+ * quadrant; from the centre, the drag is half the size in each direction.
+ */
+export function dragRect(
+  start: Point,
+  current: Point,
+  mods: DragRectModifiers
+): { x: number; y: number; width: number; height: number } {
+  let dx = current.x - start.x;
+  let dy = current.y - start.y;
+  if (mods.square) {
+    const side = Math.max(Math.abs(dx), Math.abs(dy));
+    dx = dx < 0 ? -side : side;
+    dy = dy < 0 ? -side : side;
+  }
+  if (mods.fromCenter) {
+    return { x: start.x - Math.abs(dx), y: start.y - Math.abs(dy), width: 2 * Math.abs(dx), height: 2 * Math.abs(dy) };
+  }
+  return { x: Math.min(start.x, start.x + dx), y: Math.min(start.y, start.y + dy), width: Math.abs(dx), height: Math.abs(dy) };
+}

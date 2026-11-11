@@ -205,6 +205,10 @@ Limits: the outline's arcs are fitted to within 0.04 px (0.01 mm) rather than de
 
 **Typed size**: the width and height labels on the boundary are clickable. A click swaps the label for a text input; Enter or clicking away applies, Escape cancels. A bare number is mm, and `cm`, `in` (or `"`) and `px` suffixes work (`parseLength` in `units.ts`). The boundary keeps its centre (`resizeBoundary` in `geometry.ts`); a pen polygon is scaled about its centre, which is the first way to resize one. Sizes are clamped between 40 px and about 2 m. Like a drag resize, it clears frozen points and regenerates.
 
+## Boundary drawing modifiers (2026-11-11)
+
+The rectangle and ellipse tools follow Illustrator's modifier flow while dragging: **Shift** constrains to a square or circle (side = the larger drag distance, growing toward the cursor), **Command** (Control on Windows and Linux) draws from the centre, and **Shift+Command** does both. Illustrator uses Option for from-centre; here Alt+drag already pans, so Command takes that role. Modifiers are live: pressing or releasing one mid-drag updates the preview. `dragRect` in `geometry.ts` is the one function behind the preview and the created boundary; modifier state comes from key events and is re-read from each mouse event, and a window blur clears it.
+
 ## Suggested order
 
 1. Quick wins A1–A7 (restores trust in the output immediately; ship to Netlify).

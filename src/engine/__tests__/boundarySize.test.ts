@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { BoundaryShape, DEFAULT_PARAMS } from '../../types';
 import { parseLength, mmToPx } from '../units';
-import { resizeBoundary, makePolygonBoundary } from '../geometry';
+import { resizeBoundary, makePolygonBoundary, dragRect } from '../geometry';
 import { buildSvgDocument, needsBoundaryClip } from '../svgExport';
 import { buildFabricationSvg } from '../fabrication';
 import { generateSerpentine } from '../serpentineGenerator';
@@ -82,5 +82,37 @@ describe('boundary outline in exports', () => {
     expect(off).not.toContain('<rect');
     expect(off).toContain('<g id="Outline"');
     expect(off).toContain('<g id="Centerline"');
+  });
+});
+
+describe('drawing a boundary with modifiers', () => {
+  const start = { x: 100, y: 100 };
+  const plain = { square: false, fromCenter: false };
+
+  it('plain drag spans the two points in any direction', () => {
+    expect(dragRect(start, { x: 160, y: 130 }, plain)).toEqual({ x: 100, y: 100, width: 60, height: 30 });
+    expect(dragRect(start, { x: 40, y: 70 }, plain)).toEqual({ x: 40, y: 70, width: 60, height: 30 });
+  });
+
+  it('constrain makes a square on the larger drag distance, toward the cursor', () => {
+    const sq = { square: true, fromCenter: false };
+    expect(dragRect(start, { x: 160, y: 130 }, sq)).toEqual({ x: 100, y: 100, width: 60, height: 60 });
+    expect(dragRect(start, { x: 120, y: 190 }, sq)).toEqual({ x: 100, y: 100, width: 90, height: 90 });
+    expect(dragRect(start, { x: 40, y: 130 }, sq)).toEqual({ x: 40, y: 100, width: 60, height: 60 });
+    expect(dragRect(start, { x: 70, y: 20 }, sq)).toEqual({ x: 20, y: 20, width: 80, height: 80 });
+  });
+
+  it('from centre keeps the press point in the middle', () => {
+    const c = { square: false, fromCenter: true };
+    expect(dragRect(start, { x: 160, y: 130 }, c)).toEqual({ x: 40, y: 70, width: 120, height: 60 });
+    expect(dragRect(start, { x: 40, y: 70 }, c)).toEqual({ x: 40, y: 70, width: 120, height: 60 });
+  });
+
+  it('both give a centred square', () => {
+    const both = { square: true, fromCenter: true };
+    const r = dragRect(start, { x: 130, y: 180 }, both);
+    expect(r).toEqual({ x: 20, y: 20, width: 160, height: 160 });
+    expect(r.x + r.width / 2).toBe(start.x);
+    expect(r.y + r.height / 2).toBe(start.y);
   });
 });
