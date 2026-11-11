@@ -132,6 +132,12 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
           Closed Loop keeps the one-line modes as a ring with no ends; Pieces cuts the line into several paths. The Engine disclosure under Serpentine still offers the older walkers (Continuous, Multi-Pass, Wicked Wise) for a sparser look.
         </div>
 
+        <SectionTitle title="Export" />
+        <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>
+          <span style={{ color: colors.accent }}>Artwork</span> saves the strokes as drawn.{' '}
+          <span style={{ color: colors.accent }}>Fabrication</span> saves layers for cutting and editing: Outline is the stroke expanded into one filled shape with true arcs, Centerline is one path per line, and Colour holds the gradient as flat bands that tile the outline, smooth or snapped to a set number of colours.
+        </div>
+
         <SectionTitle title="Direction Guides" />
         <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>
           Use the <span style={{ color: colors.guideArrow }}>Direction Guide</span> tool (D) to influence path direction.

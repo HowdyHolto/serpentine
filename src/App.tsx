@@ -195,12 +195,27 @@ export default function App() {
     }
   }, [frozenIndices.size, frozenParams, params]);
 
-  const handleExport = useCallback(() => {
-    if (!boundary || paths.length === 0) return;
-    const exportParams = { ...(frozenParams || params), style: params.style };
-    const svg = buildSvgDocument(boundary, styled.paths, exportParams, styled.markers);
-    downloadSvg(svg, exportParams.seed);
-  }, [boundary, paths.length, styled, params, frozenParams]);
+  const handleExport = useCallback(
+    (kind: 'artwork' | 'fabrication', colourSteps: number) => {
+      if (!boundary || paths.length === 0) return;
+      const exportParams = { ...(frozenParams || params), style: params.style };
+      if (kind === 'artwork') {
+        const svg = buildSvgDocument(boundary, styled.paths, exportParams, styled.markers);
+        downloadSvg(svg, exportParams.seed);
+        return;
+      }
+      // The outline engine is loaded on demand; it is only needed for this export.
+      import('./engine/fabrication')
+        .then(({ buildFabricationSvg }) => {
+          const svg = buildFabricationSvg(boundary, paths, exportParams, { colourSteps });
+          downloadSvg(svg, exportParams.seed, 'fabrication');
+        })
+        .catch((err: unknown) => {
+          setToastMessage(`Fabrication export failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+        });
+    },
+    [boundary, paths, styled, params, frozenParams]
+  );
 
   const handleRandomizeSeed = useCallback(() => {
     const fp = frozenParamsRef.current;
@@ -473,6 +488,7 @@ export default function App() {
         onToolChange={setActiveTool}
         onGenerate={handleGenerate}
         onExport={handleExport}
+        gradientOn={params.style.gradientEnabled}
         onRandomizeSeed={handleRandomizeSeed}
         hasBoundary={!!boundary}
         hasPath={paths.length > 0}

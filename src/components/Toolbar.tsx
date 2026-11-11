@@ -16,7 +16,9 @@ import {
   EyeOff,
   Library,
   Mountain,
+  ChevronDown,
 } from 'lucide-react';
+import { useState } from 'react';
 import { ActiveTool } from '../types';
 import { colors, gradients } from '../theme';
 
@@ -24,7 +26,10 @@ interface ToolbarProps {
   activeTool: ActiveTool;
   onToolChange: (tool: ActiveTool) => void;
   onGenerate: () => void;
-  onExport: () => void;
+  /** 'artwork' = strokes as on screen; 'fabrication' = outline, centerline and colour layers. */
+  onExport: (kind: 'artwork' | 'fabrication', colourSteps: number) => void;
+  /** The length gradient is on, so the fabrication export has a colour layer. */
+  gradientOn: boolean;
   onRandomizeSeed: () => void;
   hasBoundary: boolean;
   hasPath: boolean;
@@ -75,11 +80,26 @@ function Divider() {
   return <div className="w-px h-5 mx-1.5" style={{ background: colors.borderMedium }} />;
 }
 
+function ExportOption({ title, detail, onClick }: { title: string; detail: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="block w-full text-left px-3.5 py-2.5 transition-colors"
+      onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)')}
+      onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = '')}
+    >
+      <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>{title}</div>
+      <div className="text-[10px] leading-relaxed mt-0.5" style={{ color: colors.textFaint }}>{detail}</div>
+    </button>
+  );
+}
+
 export function Toolbar({
   activeTool,
   onToolChange,
   onGenerate,
   onExport,
+  gradientOn,
   onRandomizeSeed,
   hasBoundary,
   hasPath,
@@ -95,9 +115,15 @@ export function Toolbar({
   libraryOpen,
   onToggleLibrary,
 }: ToolbarProps) {
+  const [exportOpen, setExportOpen] = useState(false);
+  const [colourSteps, setColourSteps] = useState(0);
+  const runExport = (kind: 'artwork' | 'fabrication') => {
+    setExportOpen(false);
+    onExport(kind, colourSteps);
+  };
   return (
     <div
-      className="h-12 flex items-center px-4 gap-1 shrink-0"
+      className="h-12 flex items-center px-4 gap-1 shrink-0 relative z-40"
       style={{
         background: colors.bgToolbar,
         backdropFilter: 'blur(24px)',
@@ -268,30 +294,74 @@ export function Toolbar({
 
       <Divider />
 
-      <button
-        onClick={onExport}
-        disabled={!hasPath}
-        title="Export SVG"
-        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed"
-        style={{
-          color: colors.textMuted,
-          border: `1px solid ${colors.borderMedium}`,
-        }}
-        onMouseEnter={(e) => {
-          if (!hasPath) return;
-          (e.currentTarget as HTMLButtonElement).style.color = colors.textPrimary;
-          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.13)';
-          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.color = colors.textMuted;
-          (e.currentTarget as HTMLButtonElement).style.borderColor = colors.borderMedium;
-          (e.currentTarget as HTMLButtonElement).style.background = '';
-        }}
-      >
-        <Download size={13} />
-        Export SVG
-      </button>
+      <div className="relative">
+        <button
+          onClick={() => setExportOpen((o) => !o)}
+          disabled={!hasPath}
+          title="Export SVG"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed"
+          style={{
+            color: exportOpen ? colors.textPrimary : colors.textMuted,
+            border: `1px solid ${colors.borderMedium}`,
+            background: exportOpen ? 'rgba(255,255,255,0.05)' : '',
+          }}
+        >
+          <Download size={13} />
+          Export SVG
+          <ChevronDown size={12} />
+        </button>
+        {exportOpen && hasPath && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setExportOpen(false)} />
+            <div
+              className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl overflow-hidden shadow-2xl"
+              style={{
+                background: colors.bgHelpPanel,
+                backdropFilter: 'blur(24px)',
+                border: `1px solid ${colors.borderMedium}`,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              }}
+            >
+              <ExportOption
+                title="Artwork"
+                detail="Strokes as on screen, with the gradient as coloured stroke pieces."
+                onClick={() => runExport('artwork')}
+              />
+              <div style={{ borderTop: `1px solid ${colors.borderLight}` }} />
+              <ExportOption
+                title="Fabrication"
+                detail="Layers: Outline (the stroke expanded to one filled shape), Centerline (one path per line), and Colour bands when the gradient is on."
+                onClick={() => runExport('fabrication')}
+              />
+              {gradientOn && (
+                <div className="px-3.5 pb-3 -mt-1">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px]" style={{ color: colors.textMuted }}>Colour bands</label>
+                    <span
+                      className="text-[11px] font-mono px-1.5 py-0.5 rounded-md"
+                      style={{ color: colors.accent, background: colors.accentBgLight }}
+                    >
+                      {colourSteps < 2 ? 'Smooth' : colourSteps}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={32}
+                    step={1}
+                    value={Math.max(1, colourSteps)}
+                    onChange={(e) => setColourSteps(Number(e.target.value) < 2 ? 0 : Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-[10px] mt-1" style={{ color: colors.textFaint }}>
+                    Smooth keeps the gradient as many small flat shapes. A number snaps it to that many colours, one shape per colour, for separate materials or inks.
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

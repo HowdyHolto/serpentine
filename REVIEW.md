@@ -186,6 +186,19 @@ Measured in `rake.test.ts`: garden rings around one rock are one cell apart to w
 
 Not built: variable width along one Trace line (Rake has width by level instead), colour along the path, shapes along the path, renaming library entries.
 
+## Fabrication export (2026-11-10)
+
+The Export button is now a menu. **Artwork** is the previous export (strokes as on screen; with the gradient on, the line is many short coloured stroke pieces, which is what made fabrication prep awkward). **Fabrication** writes a layered SVG in mm from the un-styled rendered paths, in `src/engine/fabrication.ts` (loaded on demand, its own 29 kB gzip chunk):
+
+- **Centerline**: one `<path>` per continuous run with the renderer's own lines and tangent arcs, no fill, red hairline. A single Trace line is one open path; a Closed Loop is one closed path; Pieces, gaps and Rake give one path each. Rake polylines are refitted to arcs first (0.25 px, the tolerance they were simplified at), so a garden ring is a few arcs instead of hundreds of points.
+- **Outline**: the stroke expanded into one filled compound path (even-odd), i.e. Illustrator's Outline Stroke plus Unite. The centerline is flattened to within 0.01 px, offset by half the width with round joins and the chosen cap by Clipper (`clipper-lib`, integer coordinates at 1/1000 px), united across runs and widths, intersected with the boundary like the canvas clip, and then circular arcs are fitted back onto the polygon (`fitPathData`, 0.04 px), so corners are real `A` arcs and long edges single `L` segments. A typical Trace outline is one ring of roughly 800 arcs and 400 lines. Works for squared turns, tiny radii, jitter, 45 degree chamfers, butt caps and Rake's per-line widths.
+- **Colour**: no vector format can fill one shape with a gradient that follows a path, so the gradient is kept as flat-colour bands that tile the outline exactly: `gradientSpans` in `pathStyle.ts` cuts each run into contiguous spans by arc length, each span is expanded with butt ends where it meets its neighbour (plus the round cap at a true line end), and spans of one colour are united into one compound path. The menu's **Colour bands** slider chooses Smooth (screen resolution, hundreds of small shapes) or 2 to 32 snapped colours (one shape per colour, for separate materials, inks or passes).
+- **Markers** are written as closed shapes (a dash becomes a rounded bar), and **Boundary** is kept as an outline. When markers replace the stroke there is no Outline layer.
+
+Layers are top-level groups with ids and Inkscape layer attributes (Inkscape shows layers; Illustrator shows named groups). Checked in `fabrication.test.ts`: outline area equals line length x width plus caps to within 0.5%; one ring for an open line, outer ring plus hole for a closed loop; fitted path area within 0.1% of the polygon; band areas add up to the outline within 1%; clipped inside an ellipse; rake refit stays within 0.3 px. 196 tests.
+
+Limits: the outline's arcs are fitted to within 0.04 px (0.01 mm) rather than derived analytically; in Smooth mode neighbouring bands share an exact edge, which can show a hairline when previewed on screen (not in cut or print separations); the Markers layer is not united with the outline; real Illustrator layers would need Adobe's private attributes.
+
 ## Suggested order
 
 1. Quick wins A1–A7 (restores trust in the output immediately; ship to Netlify).

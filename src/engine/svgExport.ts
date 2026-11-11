@@ -83,12 +83,12 @@ export function buildSvgDocument(
 ${pathGroupsEl}</svg>`;
 }
 
-export function downloadSvg(svgContent: string, seed: number): void {
+export function downloadSvg(svgContent: string, seed: number, label = ''): void {
   const blob = new Blob([svgContent], { type: 'image/svg+xml' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `serpentine-${seed}-${Date.now()}.svg`;
+  a.download = `serpentine-${seed}${label ? '-' + label : ''}-${Date.now()}.svg`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

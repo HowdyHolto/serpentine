@@ -367,6 +367,56 @@ export function applyPathStyle(paths: RenderedPath[], params: GenerationParams):
   return { paths: outPaths, markers, strokesVisible: strokesVisible(style) };
 }
 
+/** A stretch of one path, from arc length s0 to s1, in one flat colour. */
+export interface ColourSpan { s0: number; s1: number; color: string }
+
+export interface PathColourSpans {
+  path: RenderedPath;
+  parsed: ParsedPath;
+  spans: ColourSpan[];
+}
+
+/**
+ * The gradient as contiguous, non-overlapping flat-colour spans along each
+ * path: what the fabrication export outlines into colour bands. `steps` 0
+ * keeps the on-screen resolution (one colour per piece); 2 or more snaps the
+ * gradient to that many evenly spaced colours, so long stretches merge into
+ * one band. Consecutive spans of the same colour are always merged.
+ */
+export function gradientSpans(paths: RenderedPath[], params: GenerationParams, steps = 0): PathColourSpans[] {
+  const style = params.style;
+  if (!style.gradientEnabled || paths.length === 0) return [];
+  const scoped = scopePaths(paths, style);
+  const total = scoped.reduce((s, p) => s + p.parsed.length, 0);
+  const cell = Math.max(MIN_PIECE_LEN, params.strokeWidth + params.minGap);
+  let pieceLen = Math.max(cell, total / MAX_PIECES);
+  const n = Math.floor(steps);
+  // Stepped bands change colour at a threshold; sample finer so the cut lands close to it.
+  if (n >= 2) pieceLen = Math.max(1, pieceLen / 4);
+  const colour = (sp: ScopedPath, s: number): string => {
+    if (n < 2) return colorAt(sp, s, style);
+    const t = cycleT(sp.span > 0 ? (sp.base + s) / sp.span : 0, style.gradientCycles);
+    const q = Math.round(t * (n - 1)) / (n - 1);
+    return gradientColor(style.gradientStops, q, style.gradientSpread ?? 1);
+  };
+  return scoped.map((sp) => {
+    const L = sp.parsed.length;
+    const spans: ColourSpan[] = [];
+    if (L > 0) {
+      const count = Math.max(1, Math.ceil(L / pieceLen));
+      const step = L / count;
+      for (let i = 0; i < count; i++) {
+        const s0 = i * step, s1 = i === count - 1 ? L : (i + 1) * step;
+        const c = colour(sp, (s0 + s1) / 2);
+        const last = spans[spans.length - 1];
+        if (last && last.color === c) last.s1 = s1;
+        else spans.push({ s0, s1, color: c });
+      }
+    }
+    return { path: sp.path, parsed: sp.parsed, spans };
+  });
+}
+
 /** Render waypoints straight to styled paths (gradient pieces when the gradient is on). */
 export function renderStyledPaths(waypoints: Waypoint[], params: GenerationParams): RenderedPath[] {
   return applyPathStyle(renderPaths(waypoints, params), params).paths;
