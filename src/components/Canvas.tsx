@@ -16,7 +16,8 @@ import {
 } from '../types';
 import { getGroupIndices } from '../engine/constraintSolver';
 import { Rulers, RULER_SIZE, PX_PER_MM } from './Rulers';
-import { makePolygonBoundary, polygonPathData } from '../engine/geometry';
+import { makePolygonBoundary, polygonPathData, resizeBoundary } from '../engine/geometry';
+import { parseLength } from '../engine/units';
 import { HelpPanel } from './HelpPanel';
 import { colors } from '../theme';
 import { markerGeometry, markerTransform } from '../engine/pathStyle';
@@ -137,6 +138,8 @@ const GUIDE_DIR_ANGLES: Record<WalkDirection, number> = {
 };
 
 const MIN_BOUNDARY_SIZE = 40;
+/** Largest typed boundary side, px (about 2 m): keeps the grid a size the engine fills quickly. */
+const MAX_BOUNDARY_SIZE = 7560;
 
 export function Canvas({
   boundary,
@@ -191,6 +194,30 @@ export function Canvas({
   const [marqueeEnd, setMarqueeEnd] = useState<Point | null>(null);
   const [ghostGuidePos, setGhostGuidePos] = useState<Point | null>(null);
   const [draggingRock, setDraggingRock] = useState<number | null>(null);
+  // Typing an exact size: which boundary dimension is being edited, and the text so far.
+  const [editingDim, setEditingDim] = useState<'width' | 'height' | null>(null);
+  const [dimDraft, setDimDraft] = useState('');
+  const beginDimEdit = useCallback(
+    (dim: 'width' | 'height') => {
+      if (!boundary) return;
+      setDimDraft(((dim === 'width' ? boundary.width : boundary.height) / PX_PER_MM).toFixed(1));
+      setEditingDim(dim);
+    },
+    [boundary]
+  );
+  const commitDimEdit = useCallback(() => {
+    if (!editingDim || !boundary) {
+      setEditingDim(null);
+      return;
+    }
+    const px = parseLength(dimDraft);
+    if (px !== null) {
+      const size = Math.min(MAX_BOUNDARY_SIZE, Math.max(MIN_BOUNDARY_SIZE, px));
+      const current = editingDim === 'width' ? boundary.width : boundary.height;
+      if (Math.abs(size - current) > 1e-6) onBoundaryResize(resizeBoundary(boundary, { [editingDim]: size }));
+    }
+    setEditingDim(null);
+  }, [editingDim, boundary, dimDraft, onBoundaryResize]);
   const [penPoints, setPenPoints] = useState<Point[]>([]);
   const [penCursor, setPenCursor] = useState<Point | null>(null);
   const penPointsRef = useRef<Point[]>([]);
@@ -713,7 +740,7 @@ export function Canvas({
           </g>
 
           {!cleanView && boundary && (
-            <BoundaryDimensions boundary={boundary} scale={transform.scale} />
+            <BoundaryDimensions boundary={boundary} scale={transform.scale} editing={editingDim} onEdit={beginDimEdit} />
           )}
 
           {!cleanView && boundary && boundary.type !== 'path' && activeTool === 'select' && (
@@ -960,6 +987,40 @@ export function Canvas({
         )}
       </svg>
 
+      {editingDim && boundary && !cleanView && (() => {
+        const off = 13 / transform.scale;
+        const wx = editingDim === 'width' ? boundary.x + boundary.width / 2 : boundary.x + boundary.width + off;
+        const wy = editingDim === 'width' ? boundary.y - off : boundary.y + boundary.height / 2;
+        return (
+          <input
+            autoFocus
+            type="text"
+            inputMode="decimal"
+            value={dimDraft}
+            aria-label={editingDim === 'width' ? 'Boundary width in mm' : 'Boundary height in mm'}
+            title="Type a size in mm (cm and in also work), then Enter"
+            onChange={(e) => setDimDraft(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={commitDimEdit}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') commitDimEdit();
+              if (e.key === 'Escape') setEditingDim(null);
+            }}
+            className="absolute z-20 w-20 rounded-md px-1.5 py-0.5 text-[11px] font-mono text-center focus:outline-none"
+            style={{
+              left: rulerSize + transform.x + wx * transform.scale,
+              top: rulerSize + transform.y + wy * transform.scale,
+              transform: 'translate(-50%, -50%)',
+              background: colors.bgHelpPanel,
+              color: colors.textPrimary,
+              border: `1px solid ${colors.accentBorder}`,
+              boxShadow: `0 0 0 2px ${colors.accentFocusRing}`,
+            }}
+          />
+        );
+      })()}
+
       <HelpPanel isOpen={showHelp} onToggle={onToggleHelp} />
     </div>
   );
@@ -968,10 +1029,25 @@ export function Canvas({
 function BoundaryDimensions({
   boundary,
   scale,
+  editing,
+  onEdit,
 }: {
   boundary: BoundaryShape;
   scale: number;
+  /** The dimension whose label is replaced by a text input right now. */
+  editing: 'width' | 'height' | null;
+  onEdit: (dim: 'width' | 'height') => void;
 }) {
+  // Labels are buttons: a click opens a text input for an exact size. The
+  // mouse-down is kept from the canvas so it does not start a draw or a pan.
+  const labelProps = (dim: 'width' | 'height') => ({
+    style: { cursor: 'text', pointerEvents: 'all' as const, visibility: editing === dim ? ('hidden' as const) : ('visible' as const) },
+    onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onEdit(dim);
+    },
+  });
   const { x, y, width, height } = boundary;
   const wMm = (width / PX_PER_MM).toFixed(1);
   const hMm = (height / PX_PER_MM).toFixed(1);
@@ -995,7 +1071,9 @@ function BoundaryDimensions({
   const hCy = y + height / 2;
 
   return (
-    <g style={{ pointerEvents: 'none' }}>
+    <g>
+      <g {...labelProps('width')}>
+      <title>Click to type a width</title>
       <rect
         x={wCx - wLabelW / 2 - pad.x}
         y={wCy - fontSize / 2 - pad.y}
@@ -1019,7 +1097,10 @@ function BoundaryDimensions({
       >
         {wLabel}
       </text>
+      </g>
 
+      <g {...labelProps('height')}>
+      <title>Click to type a height</title>
       <rect
         x={hCx - hLabelW / 2 - pad.x}
         y={hCy - fontSize / 2 - pad.y}
@@ -1045,6 +1126,7 @@ function BoundaryDimensions({
       >
         {hLabel}
       </text>
+      </g>
     </g>
   );
 }

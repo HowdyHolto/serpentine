@@ -339,6 +339,8 @@ export interface FabricationGeometry {
 export interface FabricationOptions {
   /** 0 keeps the gradient at screen resolution; 2 or more snaps it to that many flat colours. */
   colourSteps?: number;
+  /** Write the Boundary layer (the boundary's own outline). Default true. */
+  includeBoundary?: boolean;
 }
 
 /**
@@ -454,7 +456,10 @@ export function buildFabricationSvg(
   const vx = boundary.x - pad, vy = boundary.y - pad;
   const vw = boundary.width + pad * 2, vh = boundary.height + pad * 2;
 
-  let body = layer('Boundary', 'fill="none" stroke="#999999" stroke-width="0.5"', `    ${boundaryShapeElement(boundary)} />`);
+  let body = '';
+  if (options.includeBoundary ?? true) {
+    body += layer('Boundary', 'fill="none" stroke="#999999" stroke-width="0.5"', `    ${boundaryShapeElement(boundary)} />`);
+  }
   if (geo.outline) {
     body += layer('Outline', 'fill="#000000" fill-rule="evenodd" stroke="none"', `    <path d="${geo.outline}" />`);
   }

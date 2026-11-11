@@ -111,7 +111,7 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
 
         <SectionTitle title="Editing" />
         <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>
-          Drag waypoints to reshape. Points are axis-locked. End-cap pairs move together. Drag edge arrows to resize boundary.
+          Drag waypoints to reshape. Points are axis-locked. End-cap pairs move together. Drag edge arrows to resize boundary, or click its width or height label to type an exact size (mm; cm and in also work).
         </div>
 
         <SectionTitle title="Freeze" />
@@ -135,7 +135,7 @@ export function HelpPanel({ isOpen, onToggle }: HelpPanelProps) {
         <SectionTitle title="Export" />
         <div className="text-[10px] py-0.5 leading-relaxed" style={{ color: colors.textFaint }}>
           <span style={{ color: colors.accent }}>Artwork</span> saves the strokes as drawn.{' '}
-          <span style={{ color: colors.accent }}>Fabrication</span> saves layers for cutting and editing: Outline is the stroke expanded into one filled shape with true arcs, Centerline is one path per line, and Colour holds the gradient as flat bands that tile the outline, smooth or snapped to a set number of colours.
+          <span style={{ color: colors.accent }}>Fabrication</span> saves layers for cutting and editing: Outline is the stroke expanded into one filled shape with true arcs, Centerline is one path per line, and Colour holds the gradient as flat bands that tile the outline, smooth or snapped to a set number of colours. The switch at the top of the menu adds or leaves out the boundary's own outline.
         </div>
 
         <SectionTitle title="Direction Guides" />

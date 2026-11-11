@@ -199,6 +199,12 @@ Layers are top-level groups with ids and Inkscape layer attributes (Inkscape sho
 
 Limits: the outline's arcs are fitted to within 0.04 px (0.01 mm) rather than derived analytically; in Smooth mode neighbouring bands share an exact edge, which can show a hairline when previewed on screen (not in cut or print separations); the Markers layer is not united with the outline; real Illustrator layers would need Adobe's private attributes.
 
+## Boundary outline toggle and typed boundary size (2026-11-10)
+
+**Include boundary outline** is a switch at the top of the Export menu, off by default and remembered in the browser (`serpentine.export.includeBoundary`). Off, neither export writes the boundary's own shape (the `boundary` group in Artwork, the `Boundary` layer in Fabrication). Artwork also no longer writes a clip path when nothing can cross the edge (`needsBoundaryClip`: a rectangle with any mode but Rake), because Illustrator imports that clip as a clipping-mask rectangle around the piece; ellipses, polygons and Rake keep the clip.
+
+**Typed size**: the width and height labels on the boundary are clickable. A click swaps the label for a text input; Enter or clicking away applies, Escape cancels. A bare number is mm, and `cm`, `in` (or `"`) and `px` suffixes work (`parseLength` in `units.ts`). The boundary keeps its centre (`resizeBoundary` in `geometry.ts`); a pen polygon is scaled about its centre, which is the first way to resize one. Sizes are clamped between 40 px and about 2 m. Like a drag resize, it clears frozen points and regenerates.
+
 ## Suggested order
 
 1. Quick wins A1–A7 (restores trust in the output immediately; ship to Netlify).

@@ -373,7 +373,8 @@ describe('export and saves', () => {
     const groups = svg.match(/<g fill="none" stroke="#[0-9a-f]{6}" stroke-width="8"/g) ?? [];
     expect(groups.length).toBe(new Set(styled.paths.map((q) => q.stroke)).size);
     expect((svg.match(/<polygon/g) ?? []).length).toBe(styled.markers.length);
-    expect(svg).toContain('clip-path="url(#boundary-clip)"');
+    // Inside a rectangle nothing can cross the edge, so no clip is written.
+    expect(svg).not.toContain('clip-path');
     expect(svg).toMatch(/width="[\d.]+mm"/);
   });
 

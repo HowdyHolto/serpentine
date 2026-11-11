@@ -28,11 +28,27 @@ function markerElement(m: RenderedMarker): string {
  * Paths are grouped by stroke width and colour; markers get their own group.
  * When the style says markers replace the stroke, the paths are left out.
  */
+export interface SvgExportOptions {
+  /** Draw the boundary's own outline in the file. Default true. */
+  includeBoundary?: boolean;
+}
+
+/**
+ * True when strokes can reach past the boundary and the export must clip
+ * them like the screen does. Inside a rectangle the grid keeps every line at
+ * least half a gap from the edge, so no clip (and no clipping mask in
+ * Illustrator) is needed; Rake lines and curved or polygon edges can cross.
+ */
+export function needsBoundaryClip(boundary: BoundaryShape, params: GenerationParams): boolean {
+  return boundary.type !== 'rectangle' || params.patternMode === 'rake';
+}
+
 export function buildSvgDocument(
   boundary: BoundaryShape,
   paths: RenderedPath[],
   params: GenerationParams,
-  markers: RenderedMarker[] = []
+  markers: RenderedMarker[] = [],
+  options: SvgExportOptions = {}
 ): string {
   const pad = 20;
   const vx = boundary.x - pad;
@@ -45,6 +61,9 @@ export function buildSvgDocument(
   // Clip strokes exactly like the on-screen preview does, so an ellipse
   // export does not bleed past its boundary.
   const clipEl = `${shapeEl} />`;
+  const clip = needsBoundaryClip(boundary, params);
+  const clipAttr = clip ? ' clip-path="url(#boundary-clip)"' : '';
+  const includeBoundary = options.includeBoundary ?? true;
 
   const strokeGroups = new Map<string, { sw: number; stroke: string; els: string[] }>();
   const drawStrokes = strokesVisible(params.style);
@@ -59,12 +78,12 @@ export function buildSvgDocument(
 
   let pathGroupsEl = '';
   for (const { sw, stroke, els } of strokeGroups.values()) {
-    pathGroupsEl += `  <g fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${params.capStyle}" stroke-linejoin="round" clip-path="url(#boundary-clip)">\n`;
+    pathGroupsEl += `  <g fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="${params.capStyle}" stroke-linejoin="round"${clipAttr}>\n`;
     pathGroupsEl += els.join('\n') + '\n';
     pathGroupsEl += `  </g>\n`;
   }
   if (markers.length > 0) {
-    pathGroupsEl += `  <g id="markers" clip-path="url(#boundary-clip)">\n`;
+    pathGroupsEl += `  <g id="markers"${clipAttr}>\n`;
     pathGroupsEl += markers.map((m) => `    ${markerElement(m)}`).join('\n') + '\n';
     pathGroupsEl += `  </g>\n`;
   }
@@ -72,15 +91,15 @@ export function buildSvgDocument(
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" width="${fmt(pxToMm(vw))}mm" height="${fmt(pxToMm(vh))}mm">
   <!-- Serpentine Path Generator | Seed: ${params.seed} | 1 user unit = 1/96 in -->
-  <defs>
+${clip ? `  <defs>
     <clipPath id="boundary-clip">
       ${clipEl}
     </clipPath>
   </defs>
-  <g id="boundary">
+` : ''}${includeBoundary ? `  <g id="boundary">
     ${boundaryEl}
   </g>
-${pathGroupsEl}</svg>`;
+` : ''}${pathGroupsEl}</svg>`;
 }
 
 export function downloadSvg(svgContent: string, seed: number, label = ''): void {

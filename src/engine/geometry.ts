@@ -54,3 +54,20 @@ export function boundaryShapeElement(boundary: BoundaryShape): string {
   }
   return `<rect x="${boundary.x}" y="${boundary.y}" width="${boundary.width}" height="${boundary.height}"`;
 }
+
+/**
+ * The boundary at a new width and/or height (px), keeping its centre where
+ * it is. A polygon is scaled about that centre.
+ */
+export function resizeBoundary(boundary: BoundaryShape, size: { width?: number; height?: number }): BoundaryShape {
+  const width = size.width ?? boundary.width;
+  const height = size.height ?? boundary.height;
+  const cx = boundary.x + boundary.width / 2;
+  const cy = boundary.y + boundary.height / 2;
+  if (boundary.type === 'path' && boundary.points && boundary.points.length >= 3) {
+    const sx = boundary.width > 0 ? width / boundary.width : 1;
+    const sy = boundary.height > 0 ? height / boundary.height : 1;
+    return makePolygonBoundary(boundary.points.map((p) => ({ x: cx + (p.x - cx) * sx, y: cy + (p.y - cy) * sy })));
+  }
+  return { ...boundary, x: cx - width / 2, y: cy - height / 2, width, height };
+}

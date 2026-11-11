@@ -196,18 +196,20 @@ export default function App() {
   }, [frozenIndices.size, frozenParams, params]);
 
   const handleExport = useCallback(
-    (kind: 'artwork' | 'fabrication', colourSteps: number) => {
+    (kind: 'artwork' | 'fabrication', options: { colourSteps: number; includeBoundary: boolean }) => {
       if (!boundary || paths.length === 0) return;
       const exportParams = { ...(frozenParams || params), style: params.style };
       if (kind === 'artwork') {
-        const svg = buildSvgDocument(boundary, styled.paths, exportParams, styled.markers);
+        const svg = buildSvgDocument(boundary, styled.paths, exportParams, styled.markers, {
+          includeBoundary: options.includeBoundary,
+        });
         downloadSvg(svg, exportParams.seed);
         return;
       }
       // The outline engine is loaded on demand; it is only needed for this export.
       import('./engine/fabrication')
         .then(({ buildFabricationSvg }) => {
-          const svg = buildFabricationSvg(boundary, paths, exportParams, { colourSteps });
+          const svg = buildFabricationSvg(boundary, paths, exportParams, options);
           downloadSvg(svg, exportParams.seed, 'fabrication');
         })
         .catch((err: unknown) => {

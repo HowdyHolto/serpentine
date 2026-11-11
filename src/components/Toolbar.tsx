@@ -27,7 +27,7 @@ interface ToolbarProps {
   onToolChange: (tool: ActiveTool) => void;
   onGenerate: () => void;
   /** 'artwork' = strokes as on screen; 'fabrication' = outline, centerline and colour layers. */
-  onExport: (kind: 'artwork' | 'fabrication', colourSteps: number) => void;
+  onExport: (kind: 'artwork' | 'fabrication', options: { colourSteps: number; includeBoundary: boolean }) => void;
   /** The length gradient is on, so the fabrication export has a colour layer. */
   gradientOn: boolean;
   onRandomizeSeed: () => void;
@@ -80,6 +80,25 @@ function Divider() {
   return <div className="w-px h-5 mx-1.5" style={{ background: colors.borderMedium }} />;
 }
 
+const BOUNDARY_PREF_KEY = 'serpentine.export.includeBoundary';
+
+function readFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = window.localStorage.getItem(key);
+    return v === null ? fallback : v === '1';
+  } catch {
+    return fallback;
+  }
+}
+
+function writeFlag(key: string, value: boolean): void {
+  try {
+    window.localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    // Storage unavailable: the choice just lasts for this visit.
+  }
+}
+
 function ExportOption({ title, detail, onClick }: { title: string; detail: string; onClick: () => void }) {
   return (
     <button
@@ -117,9 +136,16 @@ export function Toolbar({
 }: ToolbarProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const [colourSteps, setColourSteps] = useState(0);
+  const [includeBoundary, setIncludeBoundary] = useState(() => readFlag(BOUNDARY_PREF_KEY, false));
+  const toggleBoundary = () => {
+    setIncludeBoundary((prev) => {
+      writeFlag(BOUNDARY_PREF_KEY, !prev);
+      return !prev;
+    });
+  };
   const runExport = (kind: 'artwork' | 'fabrication') => {
     setExportOpen(false);
-    onExport(kind, colourSteps);
+    onExport(kind, { colourSteps, includeBoundary });
   };
   return (
     <div
@@ -322,6 +348,28 @@ export function Toolbar({
                 boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               }}
             >
+              <div
+                className="flex items-center justify-between px-3.5 py-2.5"
+                style={{ borderBottom: `1px solid ${colors.borderLight}` }}
+              >
+                <div>
+                  <div className="text-[11px]" style={{ color: colors.textMuted }}>Include boundary outline</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: colors.textFaint }}>The shape around the piece, as a thin grey line.</div>
+                </div>
+                <button
+                  onClick={toggleBoundary}
+                  role="switch"
+                  aria-checked={includeBoundary}
+                  title="Include the boundary outline in exported files"
+                  className="w-9 h-5 rounded-full relative transition-all duration-200 shrink-0"
+                  style={{ background: includeBoundary ? 'rgba(14,201,176,0.9)' : 'rgba(255,255,255,0.1)' }}
+                >
+                  <span
+                    className="absolute top-0.5 w-4 h-4 rounded-full transition-all duration-200"
+                    style={{ background: '#fff', left: includeBoundary ? '18px' : '2px' }}
+                  />
+                </button>
+              </div>
               <ExportOption
                 title="Artwork"
                 detail="Strokes as on screen, with the gradient as coloured stroke pieces."
